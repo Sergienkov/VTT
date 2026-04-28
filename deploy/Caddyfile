@@ -5,6 +5,17 @@ www.veratt.ru {
 veratt.ru {
 	encode zstd gzip
 
+	@serviceWorker path /service-worker.js
+	header @serviceWorker Cache-Control "no-cache"
+
+	@appShell path / /index.html
+	header @appShell Cache-Control "no-cache"
+
+	handle /api {
+		rewrite * /health
+		reverse_proxy api:8787
+	}
+
 	handle_path /api/* {
 		reverse_proxy api:8787
 	}

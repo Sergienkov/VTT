@@ -44,6 +44,7 @@ Current production domain shape:
 
 ```text
 https://veratt.ru
+https://veratt.ru/api
 https://veratt.ru/api/health
 ```
 
@@ -125,6 +126,7 @@ mkdir -p web
 rm -rf web/*
 tar -xzf /tmp/task-manager-web-dist.tar.gz -C web
 docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml up -d --force-recreate --no-deps caddy
 curl -fsS http://127.0.0.1:8787/health
 ```
 

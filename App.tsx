@@ -20,7 +20,7 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -48,13 +48,31 @@ import {
   verifyPhoneLogin,
 } from './src/apiClient';
 import { clearAuthState, loadAuthState, saveAuthState } from './src/authRepository';
-import { addDays, AuthState, Idea, Task, TaskDraft, TaskStatus, TODAY, TOMORROW } from './src/domain';
+import {
+  addDays,
+  AuthState,
+  Idea,
+  PendingMutation,
+  Task,
+  TaskDraft,
+  TaskStatus,
+  TODAY,
+  TOMORROW,
+} from './src/domain';
 import { loadLocalState, saveLocalState } from './src/localTaskRepository';
 import { seedIdeas, seedTasks } from './src/seedData';
+import { loadPendingMutations, savePendingMutations } from './src/syncQueueRepository';
 
 type TabKey = 'day' | 'all' | 'links' | 'ideas';
 type ViewMode = TabKey | 'timeline' | 'detail';
 type TaskFilter = 'all' | 'today' | 'personal' | 'shared' | 'focus';
+type PendingMutationInput =
+  | { type: 'createTask' | 'updateTask'; task: Task }
+  | { type: 'setTaskStatus'; taskId: string; status: TaskStatus }
+  | { type: 'markTaskSeen'; taskId: string }
+  | { type: 'createComment'; taskId: string; body: string }
+  | { type: 'createIdea'; idea: Idea }
+  | { type: 'convertIdea'; ideaId: string; date: string };
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Sun }> = [
   { key: 'day', label: 'День', icon: Sun },
@@ -108,16 +126,20 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [localOnly, setLocalOnly] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Локальные данные');
+  const [pendingMutations, setPendingMutations] = useState<PendingMutation[]>([]);
+  const [online, setOnline] = useState(getInitialOnline);
+  const queueFlushRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
-    Promise.all([loadLocalState(), loadAuthState()])
-      .then(([parsed, savedAuth]) => {
+    Promise.all([loadLocalState(), loadAuthState(), loadPendingMutations()])
+      .then(([parsed, savedAuth, savedQueue]) => {
         if (!mounted) return;
         if (Array.isArray(parsed?.tasks)) setTasks(parsed.tasks);
         if (Array.isArray(parsed?.ideas)) setIdeas(parsed.ideas);
         if (parsed?.tasks?.[0]?.id) setSelectedTaskId(parsed.tasks[0].id);
+        setPendingMutations(savedQueue);
         if (savedAuth) {
           setAuth(savedAuth);
           setSyncStatus('Подключение к API');
@@ -153,9 +175,28 @@ export default function App() {
     });
   }, [hydrated, ideas, tasks]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    savePendingMutations(pendingMutations).catch(() => {
+      // A failed queue write should not block local task edits.
+    });
+  }, [hydrated, pendingMutations]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    const updateOnlineState = () => setOnline(getInitialOnline());
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+    return () => {
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
+    };
+  }, []);
+
   const activeTab = view === 'timeline' || view === 'detail' ? lastTab : view;
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0];
   const unreadCount = tasks.filter((task) => !task.seen && task.status === 'active').length;
+  const displayedSyncStatus = formatSyncStatus(syncStatus, pendingMutations.length, online);
 
   const activeTasks = useMemo(
     () => sortTasks(tasks.filter((task) => task.status === 'active')),
@@ -202,12 +243,59 @@ export default function App() {
       .catch(() => setSyncStatus('Офлайн: локальные данные'));
   };
 
-  const runRemoteMutation = (operation: (session: AuthState) => Promise<unknown>) => {
+  const enqueueMutation = (mutation: PendingMutation) => {
+    setPendingMutations((current) => [...current, mutation]);
+    setSyncStatus('Офлайн: изменения сохранены локально');
+  };
+
+  const runQueuedRemoteMutation = (
+    operation: (session: AuthState) => Promise<unknown>,
+    mutation: PendingMutation,
+  ) => {
     if (!auth || localOnly) return;
+    if (!online) {
+      enqueueMutation(mutation);
+      return;
+    }
     operation(auth)
       .then(() => setSyncStatus('API подключен'))
-      .catch(() => setSyncStatus('Офлайн: изменения сохранены локально'));
+      .catch(() => enqueueMutation(mutation));
   };
+
+  useEffect(() => {
+    if (!hydrated || !auth || localOnly || !online || !pendingMutations.length) return undefined;
+    if (queueFlushRef.current) return undefined;
+
+    let cancelled = false;
+    const queued = pendingMutations;
+    queueFlushRef.current = true;
+    setSyncStatus(`Синхронизация (${queued.length})`);
+
+    flushPendingMutations(auth, queued)
+      .then((remaining) => {
+        if (cancelled) return;
+        if (remaining.length) {
+          if (remaining.length !== queued.length) {
+            setPendingMutations(remaining);
+          }
+          setSyncStatus('Офлайн: изменения сохранены локально');
+          return;
+        }
+        setPendingMutations([]);
+        setSyncStatus('API подключен');
+        refreshFromApi(auth);
+      })
+      .catch(() => {
+        if (!cancelled) setSyncStatus('Офлайн: изменения сохранены локально');
+      })
+      .finally(() => {
+        queueFlushRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth, hydrated, localOnly, online, pendingMutations]);
 
   const handleAuthenticated = (session: AuthState) => {
     setAuth(session);
@@ -248,7 +336,10 @@ export default function App() {
     setTasks((current) =>
       current.map((task) => (task.id === taskId ? { ...task, seen: true } : task)),
     );
-    runRemoteMutation((session) => markRemoteTaskSeen(session, taskId));
+    runQueuedRemoteMutation(
+      (session) => markRemoteTaskSeen(session, taskId),
+      createPendingMutation({ type: 'markTaskSeen', taskId }),
+    );
     setView('detail');
   };
 
@@ -286,8 +377,10 @@ export default function App() {
     );
     setSelectedTaskId(nextTask.id);
     setTaskEditor({ visible: false });
-    runRemoteMutation((session) =>
-      isEdit ? updateRemoteTask(session, nextTask) : createRemoteTask(session, nextTask),
+    runQueuedRemoteMutation(
+      (session) =>
+        isEdit ? updateRemoteTask(session, nextTask) : createRemoteTask(session, nextTask),
+      createPendingMutation({ type: isEdit ? 'updateTask' : 'createTask', task: nextTask }),
     );
   };
 
@@ -305,7 +398,10 @@ export default function App() {
           : task,
       ),
     );
-    runRemoteMutation((session) => setRemoteTaskStatus(session, taskId, nextStatus));
+    runQueuedRemoteMutation(
+      (session) => setRemoteTaskStatus(session, taskId, nextStatus),
+      createPendingMutation({ type: 'setTaskStatus', taskId, status: nextStatus }),
+    );
   };
 
   const addComment = (taskId: string, comment: string) => {
@@ -322,7 +418,10 @@ export default function App() {
           : task,
       ),
     );
-    runRemoteMutation((session) => createRemoteComment(session, taskId, trimmed));
+    runQueuedRemoteMutation(
+      (session) => createRemoteComment(session, taskId, trimmed),
+      createPendingMutation({ type: 'createComment', taskId, body: trimmed }),
+    );
   };
 
   const saveIdea = (title: string, description: string) => {
@@ -336,7 +435,10 @@ export default function App() {
     };
     setIdeas((current) => [idea, ...current]);
     setIdeaEditorVisible(false);
-    runRemoteMutation((session) => createRemoteIdea(session, idea));
+    runQueuedRemoteMutation(
+      (session) => createRemoteIdea(session, idea),
+      createPendingMutation({ type: 'createIdea', idea }),
+    );
   };
 
   const convertIdeaToTask = (idea: Idea) => {
@@ -366,7 +468,16 @@ export default function App() {
     setLastTab('all');
     setView('detail');
 
+    const pendingConvert = createPendingMutation({
+      type: 'convertIdea',
+      ideaId: idea.id,
+      date: TODAY,
+    });
     if (!auth || localOnly) return;
+    if (!online) {
+      enqueueMutation(pendingConvert);
+      return;
+    }
     setSyncStatus('Синхронизация');
     convertRemoteIdea(auth, idea.id, TODAY)
       .then((remote) => {
@@ -380,7 +491,7 @@ export default function App() {
         setSelectedTaskId(remote.task.id);
         setSyncStatus('API подключен');
       })
-      .catch(() => setSyncStatus('Офлайн: изменения сохранены локально'));
+      .catch(() => enqueueMutation(pendingConvert));
   };
 
   if (hydrated && !auth && !localOnly) {
@@ -389,7 +500,7 @@ export default function App() {
         <View style={styles.shell}>
           <StatusBar style="dark" />
           <AuthScreen
-            status={syncStatus}
+            status={displayedSyncStatus}
             onAuthenticated={handleAuthenticated}
             onLocalMode={handleLocalMode}
           />
@@ -416,10 +527,10 @@ export default function App() {
           <>
             <Header
               title={getHeaderTitle(view, tasks.length)}
-              subtitle={view === 'day' ? formatLongDate(TODAY) : syncStatus}
+              subtitle={view === 'day' ? formatLongDate(TODAY) : displayedSyncStatus}
               centered={view === 'day'}
               unreadCount={unreadCount}
-              sessionLabel={syncStatus}
+              sessionLabel={displayedSyncStatus}
               onTimeline={() => setView('timeline')}
               onCreate={() => setTaskEditor({ visible: true })}
               onLogout={auth ? handleLogout : undefined}
@@ -485,6 +596,60 @@ export default function App() {
       </View>
     </SafeAreaView>
   );
+}
+
+function createPendingMutation(input: PendingMutationInput): PendingMutation {
+  return {
+    ...input,
+    id: `mutation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function flushPendingMutations(auth: AuthState, items: PendingMutation[]) {
+  const remaining = [...items];
+
+  while (remaining.length) {
+    const mutation = remaining[0];
+    try {
+      await runPendingMutation(auth, mutation);
+      remaining.shift();
+    } catch {
+      return remaining;
+    }
+  }
+
+  return remaining;
+}
+
+function runPendingMutation(auth: AuthState, mutation: PendingMutation) {
+  switch (mutation.type) {
+    case 'createTask':
+      return createRemoteTask(auth, mutation.task);
+    case 'updateTask':
+      return updateRemoteTask(auth, mutation.task);
+    case 'setTaskStatus':
+      return setRemoteTaskStatus(auth, mutation.taskId, mutation.status);
+    case 'markTaskSeen':
+      return markRemoteTaskSeen(auth, mutation.taskId);
+    case 'createComment':
+      return createRemoteComment(auth, mutation.taskId, mutation.body);
+    case 'createIdea':
+      return createRemoteIdea(auth, mutation.idea);
+    case 'convertIdea':
+      return convertRemoteIdea(auth, mutation.ideaId, mutation.date);
+  }
+}
+
+function getInitialOnline() {
+  if (Platform.OS !== 'web' || typeof navigator === 'undefined') return true;
+  return navigator.onLine;
+}
+
+function formatSyncStatus(status: string, pendingCount: number, online: boolean) {
+  const networkSuffix = online ? '' : ' · нет сети';
+  const queueSuffix = pendingCount > 0 ? ` · ${pendingCount} в очереди` : '';
+  return `${status}${networkSuffix}${queueSuffix}`;
 }
 
 function AuthScreen({

@@ -47,6 +47,47 @@ export type StoredState = {
   ideas: Idea[];
 };
 
+export type PendingMutation =
+  | {
+      id: string;
+      type: 'createTask' | 'updateTask';
+      task: Task;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: 'setTaskStatus';
+      taskId: string;
+      status: TaskStatus;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: 'markTaskSeen';
+      taskId: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: 'createComment';
+      taskId: string;
+      body: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: 'createIdea';
+      idea: Idea;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: 'convertIdea';
+      ideaId: string;
+      date: string;
+      createdAt: string;
+    };
+
 export type TaskDraft = {
   title: string;
   description: string;
