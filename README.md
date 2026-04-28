@@ -96,10 +96,10 @@ Default API URL:
 http://localhost:8787
 ```
 
-Current staging API:
+Current production API:
 
 ```text
-http://217.114.9.114:8787
+https://veratt.ru/api
 ```
 
 Development phone auth returns `devCode` from `POST /auth/phone/start`.
@@ -118,10 +118,10 @@ The deploy workflow expects SSH secrets in GitHub Actions and runs the Bun/Hono 
 
 ## Mobile Preview Builds
 
-Preview builds use the current staging API:
+Preview builds use the current production API:
 
 ```text
-http://217.114.9.114:8787
+https://veratt.ru/api
 ```
 
 Build Android APK:
@@ -136,7 +136,7 @@ Build iOS internal preview:
 npm run build:ios:preview
 ```
 
-EAS needs an Expo account and project initialization on the first run. The current native config allows cleartext HTTP for the staging IP. Before production, put the API behind HTTPS and remove the broad cleartext allowance from `app.json`.
+EAS needs an Expo account and project initialization on the first run.
 
 ## Project Notes
 

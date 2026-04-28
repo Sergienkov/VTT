@@ -7,14 +7,17 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://217.114.9.114:8787"
+        "EXPO_PUBLIC_API_URL": "https://veratt.ru/api"
       },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://veratt.ru/api"
+      }
     }
   },
   "submit": {

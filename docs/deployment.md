@@ -32,11 +32,13 @@ The deploy workflow expects these GitHub repository secrets:
 - `SERVER_SSH_KEY`: private key allowed on the server
 - `SERVER_APP_DIR`: optional, defaults to `/opt/task-manager`
 
-Current staging server:
+Legacy direct API endpoint:
 
 ```text
 http://217.114.9.114:8787
 ```
+
+Keep it available only until fresh mobile preview builds are installed. New web and mobile builds use the HTTPS API below.
 
 Current production domain shape:
 
@@ -99,7 +101,7 @@ sudo chown "$USER:$USER" /opt/task-manager
 4. Verify:
 
 ```bash
-curl -fsS http://SERVER_HOST:8787/health
+curl -fsS https://veratt.ru/api/health
 ```
 
 Manual update from the local machine:
