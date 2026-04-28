@@ -14,6 +14,8 @@
     "server:start": "bun server/src/index.ts",
     "server:smoke": "bun server/src/smoke.ts",
     "server:typecheck": "tsc --project server/tsconfig.json --noEmit",
+    "build:android:preview": "EXPO_NO_TELEMETRY=1 npx eas-cli build --platform android --profile preview",
+    "build:ios:preview": "EXPO_NO_TELEMETRY=1 npx eas-cli build --platform ios --profile preview",
     "typecheck": "tsc --noEmit",
     "typecheck:all": "npm run typecheck && npm run server:typecheck"
   },

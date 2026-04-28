@@ -73,10 +73,33 @@ The Expo app stores auth in AsyncStorage and falls back to local data when the A
 
 - CI: `.github/workflows/ci.yml`
 - Manual server deploy: `.github/workflows/deploy-server.yml`
+- EAS preview builds: `eas.json`
 - Deployment notes: `docs/deployment.md`
 - Docker Compose: `deploy/docker-compose.yml`
 
 The deploy workflow expects SSH secrets in GitHub Actions and runs the Bun/Hono API on a separate server.
+
+## Mobile Preview Builds
+
+Preview builds use the current staging API:
+
+```text
+http://217.114.9.114:8787
+```
+
+Build Android APK:
+
+```bash
+npm run build:android:preview
+```
+
+Build iOS internal preview:
+
+```bash
+npm run build:ios:preview
+```
+
+EAS needs an Expo account and project initialization on the first run. The current native config allows cleartext HTTP for the staging IP. Before production, put the API behind HTTPS and remove the broad cleartext allowance from `app.json`.
 
 ## Project Notes
 
