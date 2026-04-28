@@ -30,13 +30,19 @@ The deploy workflow expects these GitHub repository secrets:
 - `SERVER_SSH_KEY`
 - `SERVER_APP_DIR`, optional, defaults to `/opt/task-manager`
 
+Current staging server:
+
+```text
+http://217.114.9.114:8787
+```
+
 ## Server Bootstrap
 
 On a fresh Ubuntu server:
 
 ```bash
 sudo apt update
-sudo apt install -y ca-certificates curl git docker.io docker-compose-plugin
+sudo apt install -y ca-certificates curl git docker.io docker-compose-v2
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
 ```
@@ -63,6 +69,17 @@ sudo chown "$USER:$USER" /opt/task-manager
 
 ```bash
 curl -fsS http://SERVER_HOST:8787/health
+```
+
+Manual update on the current server:
+
+```bash
+ssh root@217.114.9.114
+cd /opt/task-manager
+git fetch origin main
+git reset --hard origin/main
+docker compose -f deploy/docker-compose.yml up -d --build
+curl -fsS http://127.0.0.1:8787/health
 ```
 
 ## Production Notes

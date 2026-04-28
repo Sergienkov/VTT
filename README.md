@@ -58,6 +58,12 @@ Default API URL:
 http://localhost:8787
 ```
 
+Current staging API:
+
+```text
+http://217.114.9.114:8787
+```
+
 Development phone auth returns `devCode` from `POST /auth/phone/start`.
 
 The Expo app stores auth in AsyncStorage and falls back to local data when the API is unavailable. The login screen also has a local-only development path.
