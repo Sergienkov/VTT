@@ -33,7 +33,25 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "output": "single",
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "name": "Task Manager",
+      "shortName": "VTT",
+      "lang": "ru",
+      "scope": "/",
+      "themeColor": "#050505",
+      "description": "Task planning, day timeline, shared tasks, and ideas for personal work and small teams.",
+      "display": "standalone",
+      "startUrl": "/",
+      "orientation": "portrait",
+      "backgroundColor": "#f4f4f4",
+      "barStyle": "default",
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#ffffff"
+      }
     },
     "extra": {
       "eas": {

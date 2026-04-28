@@ -35,6 +35,37 @@ http://localhost:8081
 
 In restricted automation sandboxes, Expo needs permission to listen on a local TCP port. In a normal local terminal, `npm run web` is enough.
 
+## PWA Web Preview
+
+Use Expo Web for fast browser testing and the exported PWA build for install/offline checks.
+
+```bash
+npm run web
+```
+
+Dev server:
+
+```text
+http://localhost:8081
+```
+
+PWA export and local preview:
+
+```bash
+npm run web:export
+npm run web:preview
+```
+
+Preview server:
+
+```text
+http://localhost:8082
+```
+
+The PWA shell includes a web manifest, install icons, and a service worker for the exported build. The service worker is disabled on Expo's `localhost:8081` dev server to avoid stale development bundles.
+
+For public HTTPS hosting, the API also needs HTTPS. Browsers block calls from an HTTPS PWA to the current HTTP staging API.
+
 The app reads the API URL from:
 
 ```bash

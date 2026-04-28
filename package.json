@@ -10,6 +10,8 @@
     "android": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --android",
     "ios": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --ios",
     "web": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --web",
+    "web:export": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli export -p web --output-dir dist",
+    "web:preview": "node scripts/serve-web.mjs dist 8082",
     "server:dev": "bun --watch server/src/index.ts",
     "server:start": "bun server/src/index.ts",
     "server:smoke": "bun server/src/smoke.ts",

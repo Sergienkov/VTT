@@ -27,3 +27,6 @@ jobs:
 
       - name: Server smoke test
         run: npm run server:smoke
+
+      - name: Web PWA export
+        run: npm run web:export
