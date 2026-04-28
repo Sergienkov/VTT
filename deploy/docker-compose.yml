@@ -1,0 +1,12 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    container_name: task-manager-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+    ports:
+      - "${API_PORT:-8787}:8787"

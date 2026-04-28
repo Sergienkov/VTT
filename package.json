@@ -1,0 +1,40 @@
+{
+  "name": "task-manager-expo",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start",
+    "android": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --android",
+    "ios": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --ios",
+    "web": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --web",
+    "server:dev": "bun --watch server/src/index.ts",
+    "server:start": "bun server/src/index.ts",
+    "server:smoke": "bun server/src/smoke.ts",
+    "server:typecheck": "tsc --project server/tsconfig.json --noEmit",
+    "typecheck": "tsc --noEmit",
+    "typecheck:all": "npm run typecheck && npm run server:typecheck"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~54.0.33",
+    "expo-status-bar": "~3.0.9",
+    "hono": "^4.12.15",
+    "lucide-react-native": "^1.11.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-svg": "15.12.1",
+    "react-native-web": "^0.21.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "@types/react": "~19.1.0",
+    "bun": "^1.3.13",
+    "node": "^22.22.2",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

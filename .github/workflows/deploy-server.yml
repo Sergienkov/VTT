@@ -1,0 +1,33 @@
+name: Deploy Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            APP_DIR="${{ secrets.SERVER_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then APP_DIR="/opt/task-manager"; fi
+
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+
+            if [ ! -d ".git" ]; then
+              git clone "https://github.com/${{ github.repository }}.git" .
+            fi
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            docker compose -f deploy/docker-compose.yml up -d --build
+            docker compose -f deploy/docker-compose.yml ps
