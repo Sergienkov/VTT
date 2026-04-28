@@ -48,7 +48,7 @@ import {
   verifyPhoneLogin,
 } from './src/apiClient';
 import { clearAuthState, loadAuthState, saveAuthState } from './src/authRepository';
-import { AuthState, Idea, Task, TaskDraft, TaskStatus, TODAY, TOMORROW } from './src/domain';
+import { addDays, AuthState, Idea, Task, TaskDraft, TaskStatus, TODAY, TOMORROW } from './src/domain';
 import { loadLocalState, saveLocalState } from './src/localTaskRepository';
 import { seedIdeas, seedTasks } from './src/seedData';
 
@@ -69,6 +69,12 @@ const taskFilters: Array<{ key: TaskFilter; label: string }> = [
   { key: 'personal', label: 'Личные' },
   { key: 'shared', label: 'Совместные' },
   { key: 'focus', label: 'Важное' },
+];
+
+const dateShortcuts = [
+  { label: 'Сегодня', value: TODAY },
+  { label: 'Завтра', value: TOMORROW },
+  { label: '+2 дня', value: addDays(TODAY, 2) },
 ];
 
 const colors = {
@@ -977,6 +983,21 @@ function TaskEditorModal({
       Alert.alert('Название задачи', 'Добавь короткое название задачи.');
       return;
     }
+    const date = draft.date.trim() || TODAY;
+    const time = draft.time.trim();
+    const duration = draft.durationMinutes.trim();
+    if (!isValidDateKey(date)) {
+      Alert.alert('Дата', 'Введи дату в формате YYYY-MM-DD.');
+      return;
+    }
+    if (time && !isValidTime(time)) {
+      Alert.alert('Время', 'Введи время в формате 18:00.');
+      return;
+    }
+    if (duration && !isValidPositiveInteger(duration)) {
+      Alert.alert('Длительность', 'Введи длительность целым числом минут.');
+      return;
+    }
     onSave(draft, task?.id);
   };
 
@@ -1030,6 +1051,10 @@ function TaskEditorModal({
                 />
               </Field>
             </View>
+            <DateShortcutRow
+              value={draft.date}
+              onChange={(date) => update({ date })}
+            />
             <View style={styles.fieldGrid}>
               <Field label="Длительность, мин" compact>
                 <TextInput
@@ -1182,6 +1207,38 @@ function ToggleChip({
       <Icon size={18} color={active ? '#ffffff' : colors.text} />
       <Text style={[styles.toggleChipText, active && styles.toggleChipTextActive]}>{label}</Text>
     </Pressable>
+  );
+}
+
+function DateShortcutRow({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (date: string) => void;
+}) {
+  return (
+    <View style={styles.dateShortcutRow}>
+      {dateShortcuts.map((shortcut) => {
+        const active = value === shortcut.value;
+        return (
+          <Pressable
+            key={shortcut.value}
+            onPress={() => onChange(shortcut.value)}
+            style={[styles.dateShortcut, active && styles.dateShortcutActive]}
+          >
+            <CalendarDays
+              size={16}
+              color={active ? '#ffffff' : colors.text}
+              strokeWidth={2}
+            />
+            <Text style={[styles.dateShortcutText, active && styles.dateShortcutTextActive]}>
+              {shortcut.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -1401,6 +1458,25 @@ function sortTasks(items: Task[]) {
 function parseOptionalInt(value: string) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isValidDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+}
+
+function isValidTime(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isValidPositiveInteger(value: string) {
+  return /^\d+$/.test(value) && Number.parseInt(value, 10) > 0;
 }
 
 function formatDate(date: string) {
@@ -2146,6 +2222,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   toggleChipTextActive: {
+    color: '#ffffff',
+  },
+  dateShortcutRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dateShortcut: {
+    minHeight: 38,
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  dateShortcutActive: {
+    backgroundColor: '#000000',
+  },
+  dateShortcutText: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 19,
+  },
+  dateShortcutTextActive: {
     color: '#ffffff',
   },
   primaryButton: {
