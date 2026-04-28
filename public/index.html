@@ -38,9 +38,49 @@
     <script>
       (function () {
         var isExpoDevServer = window.location.hostname === 'localhost' && window.location.port === '8081';
+        var refreshing = false;
+
+        function notifyUpdateReady() {
+          if (typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('vtt:pwa-update-ready'));
+            return;
+          }
+          var event = document.createEvent('CustomEvent');
+          event.initCustomEvent('vtt:pwa-update-ready', false, false, undefined);
+          window.dispatchEvent(event);
+        }
+
         if ('serviceWorker' in navigator && !isExpoDevServer) {
           window.addEventListener('load', function () {
-            navigator.serviceWorker.register('/service-worker.js').catch(function () {});
+            navigator.serviceWorker.register('/service-worker.js').then(function (registration) {
+              if (registration.waiting && navigator.serviceWorker.controller) {
+                notifyUpdateReady();
+              }
+
+              registration.addEventListener('updatefound', function () {
+                var worker = registration.installing;
+                if (!worker) return;
+                worker.addEventListener('statechange', function () {
+                  if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                    notifyUpdateReady();
+                  }
+                });
+              });
+
+              window.addEventListener('vtt:pwa-apply-update', function () {
+                if (registration.waiting) {
+                  registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }
+              });
+
+              registration.update().catch(function () {});
+            }).catch(function () {});
+
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+              if (refreshing) return;
+              refreshing = true;
+              window.location.reload();
+            });
           });
         }
       })();

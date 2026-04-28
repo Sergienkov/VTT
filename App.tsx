@@ -73,6 +73,16 @@ type PendingMutationInput =
   | { type: 'createComment'; taskId: string; body: string }
   | { type: 'createIdea'; idea: Idea }
   | { type: 'convertIdea'; ideaId: string; date: string };
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform?: string }>;
+};
+type PwaAction = {
+  label: string;
+  status: string;
+  tone: 'install' | 'update';
+  onPress: () => void;
+};
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Sun }> = [
   { key: 'day', label: 'День', icon: Sun },
@@ -128,6 +138,9 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('Локальные данные');
   const [pendingMutations, setPendingMutations] = useState<PendingMutation[]>([]);
   const [online, setOnline] = useState(getInitialOnline);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [pwaInstalled, setPwaInstalled] = useState(isStandalonePwa);
+  const [updateReady, setUpdateReady] = useState(false);
   const queueFlushRef = useRef(false);
 
   useEffect(() => {
@@ -193,10 +206,63 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      if (!isStandalonePwa()) {
+        setInstallPrompt(event as BeforeInstallPromptEvent);
+      }
+    };
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setPwaInstalled(true);
+    };
+    const handleUpdateReady = () => setUpdateReady(true);
+
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+    window.addEventListener('vtt:pwa-update-ready', handleUpdateReady);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+      window.removeEventListener('vtt:pwa-update-ready', handleUpdateReady);
+    };
+  }, []);
+
   const activeTab = view === 'timeline' || view === 'detail' ? lastTab : view;
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0];
   const unreadCount = tasks.filter((task) => !task.seen && task.status === 'active').length;
   const displayedSyncStatus = formatSyncStatus(syncStatus, pendingMutations.length, online);
+  const pwaAction = useMemo(
+    () =>
+      getPwaAction({
+        installPrompt,
+        pwaInstalled,
+        updateReady,
+        onInstall: () => {
+          const prompt = installPrompt;
+          if (!prompt) return;
+          prompt
+            .prompt()
+            .catch(() => undefined)
+            .finally(() => {
+              prompt.userChoice
+                .catch(() => undefined)
+                .finally(() => setInstallPrompt(null));
+            });
+        },
+        onUpdate: () => {
+          setSyncStatus('Обновление');
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('vtt:pwa-apply-update'));
+          }
+        },
+      }),
+    [installPrompt, pwaInstalled, updateReady],
+  );
 
   const activeTasks = useMemo(
     () => sortTasks(tasks.filter((task) => task.status === 'active')),
@@ -501,6 +567,7 @@ export default function App() {
           <StatusBar style="dark" />
           <AuthScreen
             status={displayedSyncStatus}
+            pwaAction={pwaAction}
             onAuthenticated={handleAuthenticated}
             onLocalMode={handleLocalMode}
           />
@@ -531,6 +598,7 @@ export default function App() {
               centered={view === 'day'}
               unreadCount={unreadCount}
               sessionLabel={displayedSyncStatus}
+              pwaAction={pwaAction}
               onTimeline={() => setView('timeline')}
               onCreate={() => setTaskEditor({ visible: true })}
               onLogout={auth ? handleLogout : undefined}
@@ -646,6 +714,47 @@ function getInitialOnline() {
   return navigator.onLine;
 }
 
+function isStandalonePwa() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
+  const standaloneDisplay =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(display-mode: standalone)').matches;
+  const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
+  return standaloneDisplay || navigatorWithStandalone.standalone === true;
+}
+
+function getPwaAction({
+  installPrompt,
+  pwaInstalled,
+  updateReady,
+  onInstall,
+  onUpdate,
+}: {
+  installPrompt: BeforeInstallPromptEvent | null;
+  pwaInstalled: boolean;
+  updateReady: boolean;
+  onInstall: () => void;
+  onUpdate: () => void;
+}): PwaAction | undefined {
+  if (updateReady) {
+    return {
+      label: 'Обновить',
+      status: 'Доступно обновление',
+      tone: 'update',
+      onPress: onUpdate,
+    };
+  }
+  if (installPrompt && !pwaInstalled) {
+    return {
+      label: 'Установить',
+      status: 'Можно установить',
+      tone: 'install',
+      onPress: onInstall,
+    };
+  }
+  return undefined;
+}
+
 function formatSyncStatus(status: string, pendingCount: number, online: boolean) {
   const networkSuffix = online ? '' : ' · нет сети';
   const queueSuffix = pendingCount > 0 ? ` · ${pendingCount} в очереди` : '';
@@ -654,10 +763,12 @@ function formatSyncStatus(status: string, pendingCount: number, online: boolean)
 
 function AuthScreen({
   status,
+  pwaAction,
   onAuthenticated,
   onLocalMode,
 }: {
   status: string;
+  pwaAction?: PwaAction;
   onAuthenticated: (auth: AuthState) => void;
   onLocalMode: () => void;
 }) {
@@ -743,7 +854,10 @@ function AuthScreen({
           <Text style={styles.localModeText}>Продолжить локально</Text>
         </Pressable>
       </View>
-      <Text style={styles.authStatus}>{status}</Text>
+      <View style={styles.authFooter}>
+        <PwaActionBar action={pwaAction} />
+        <Text style={styles.authStatus}>{status}</Text>
+      </View>
     </View>
   );
 }
@@ -761,6 +875,7 @@ function Header({
   centered,
   unreadCount,
   sessionLabel,
+  pwaAction,
   onTimeline,
   onCreate,
   onLogout,
@@ -770,6 +885,7 @@ function Header({
   centered?: boolean;
   unreadCount: number;
   sessionLabel: string;
+  pwaAction?: PwaAction;
   onTimeline: () => void;
   onCreate: () => void;
   onLogout?: () => void;
@@ -819,6 +935,35 @@ function Header({
           <Clock3 size={26} color="#686868" strokeWidth={1.7} />
         </Pressable>
       </View>
+      <PwaActionBar action={pwaAction} />
+    </View>
+  );
+}
+
+function PwaActionBar({ action }: { action?: PwaAction }) {
+  if (!action) return null;
+
+  return (
+    <View style={styles.pwaActionBar}>
+      <Text numberOfLines={1} style={styles.pwaActionStatus}>
+        {action.status}
+      </Text>
+      <Pressable
+        onPress={action.onPress}
+        style={[
+          styles.pwaActionButton,
+          action.tone === 'update' && styles.pwaActionButtonAccent,
+        ]}
+      >
+        <Text
+          style={[
+            styles.pwaActionButtonText,
+            action.tone === 'update' && styles.pwaActionButtonTextAccent,
+          ]}
+        >
+          {action.label}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -1778,6 +1923,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
+  authFooter: {
+    gap: 10,
+  },
   authStatus: {
     color: colors.muted,
     fontSize: 15,
@@ -1886,6 +2034,44 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  pwaActionBar: {
+    minHeight: 38,
+    marginTop: 8,
+    paddingLeft: 12,
+    paddingRight: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  pwaActionStatus: {
+    flex: 1,
+    minWidth: 0,
+    color: '#555555',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  pwaActionButton: {
+    minHeight: 30,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+    backgroundColor: '#f0f0f0',
+  },
+  pwaActionButtonAccent: {
+    backgroundColor: '#000000',
+  },
+  pwaActionButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  pwaActionButtonTextAccent: {
+    color: '#ffffff',
   },
   iconButton: {
     width: 52,
