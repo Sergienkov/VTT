@@ -163,7 +163,7 @@ export async function createRemoteIdea(auth: AuthState, idea: Idea) {
 }
 
 export async function convertRemoteIdea(auth: AuthState, ideaId: string, date: string) {
-  return apiRequest<{ idea: ApiIdea; task: ApiTask }>(
+  const response = await apiRequest<{ idea: ApiIdea; task: ApiTask }>(
     `/ideas/${encodeURIComponent(ideaId)}/convert`,
     {
       auth,
@@ -171,6 +171,11 @@ export async function convertRemoteIdea(auth: AuthState, ideaId: string, date: s
       body: { date },
     },
   );
+
+  return {
+    idea: toAppIdea(response.idea),
+    task: toAppTask(response.task, auth.user.id, []),
+  };
 }
 
 export async function logoutRemote(auth: AuthState) {

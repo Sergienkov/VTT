@@ -342,22 +342,21 @@ export default function App() {
   const convertIdeaToTask = (idea: Idea) => {
     const taskId = `task-${Date.now()}`;
     const now = new Date().toISOString();
-    setTasks((current) => [
-      {
-        id: taskId,
-        title: idea.title,
-        description: idea.description,
-        date: TODAY,
-        status: 'active',
-        focus: false,
-        important: false,
-        seen: true,
-        comments: [],
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...current,
-    ]);
+    const optimisticTask: Task = {
+      id: taskId,
+      title: idea.title,
+      description: idea.description,
+      date: TODAY,
+      status: 'active',
+      focus: false,
+      important: false,
+      seen: true,
+      comments: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setTasks((current) => [optimisticTask, ...current]);
     setIdeas((current) =>
       current.map((item) =>
         item.id === idea.id ? { ...item, convertedTaskId: taskId } : item,
@@ -366,7 +365,22 @@ export default function App() {
     setSelectedTaskId(taskId);
     setLastTab('all');
     setView('detail');
-    runRemoteMutation((session) => convertRemoteIdea(session, idea.id, TODAY));
+
+    if (!auth || localOnly) return;
+    setSyncStatus('Синхронизация');
+    convertRemoteIdea(auth, idea.id, TODAY)
+      .then((remote) => {
+        setTasks((current) => [
+          remote.task,
+          ...current.filter((task) => task.id !== taskId && task.id !== remote.task.id),
+        ]);
+        setIdeas((current) =>
+          current.map((item) => (item.id === remote.idea.id ? remote.idea : item)),
+        );
+        setSelectedTaskId(remote.task.id);
+        setSyncStatus('API подключен');
+      })
+      .catch(() => setSyncStatus('Офлайн: изменения сохранены локально'));
   };
 
   if (hydrated && !auth && !localOnly) {
