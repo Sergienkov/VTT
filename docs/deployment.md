@@ -39,6 +39,18 @@ http://217.114.9.114:8787
 
 A dedicated deploy key was generated locally at `.deploy/github-actions-vtt-deploy`. The `.deploy/` directory is gitignored. Its public key is already installed in `root@217.114.9.114:~/.ssh/authorized_keys`.
 
+Use the helper to prepare the GitHub Actions secrets:
+
+```bash
+scripts/prepare-deploy-secrets.sh
+```
+
+If GitHub CLI is installed and authenticated, the helper can set them:
+
+```bash
+scripts/prepare-deploy-secrets.sh --apply
+```
+
 ## Server Bootstrap
 
 On a fresh Ubuntu server:
