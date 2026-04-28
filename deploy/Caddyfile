@@ -1,18 +1,18 @@
 veratt.ru {
-  encode zstd gzip
+	encode zstd gzip
 
-  handle_path /api/* {
-    reverse_proxy api:8787
-  }
+	handle_path /api/* {
+		reverse_proxy api:8787
+	}
 
-  handle {
-    root * /srv/web
-    try_files {path} /index.html
-    file_server
-  }
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
 
-  header {
-    X-Content-Type-Options nosniff
-    Referrer-Policy strict-origin-when-cross-origin
-  }
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
 }
