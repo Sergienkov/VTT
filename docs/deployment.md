@@ -25,16 +25,18 @@ The repository includes:
 
 The deploy workflow expects these GitHub repository secrets:
 
-- `SERVER_HOST`
-- `SERVER_USER`
-- `SERVER_SSH_KEY`
-- `SERVER_APP_DIR`, optional, defaults to `/opt/task-manager`
+- `SERVER_HOST`: `217.114.9.114`
+- `SERVER_USER`: `root`
+- `SERVER_SSH_KEY`: private key allowed on the server
+- `SERVER_APP_DIR`: optional, defaults to `/opt/task-manager`
 
 Current staging server:
 
 ```text
 http://217.114.9.114:8787
 ```
+
+A dedicated deploy key was generated locally at `.deploy/github-actions-vtt-deploy`. The `.deploy/` directory is gitignored. Its public key is already installed in `root@217.114.9.114:~/.ssh/authorized_keys`.
 
 ## Server Bootstrap
 
