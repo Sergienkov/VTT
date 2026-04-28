@@ -141,6 +141,7 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [pwaInstalled, setPwaInstalled] = useState(isStandalonePwa);
   const [updateReady, setUpdateReady] = useState(false);
+  const [pwaInstallHelpVisible, setPwaInstallHelpVisible] = useState(false);
   const queueFlushRef = useRef(false);
 
   useEffect(() => {
@@ -242,6 +243,7 @@ export default function App() {
         installPrompt,
         pwaInstalled,
         updateReady,
+        iosInstallAvailable: isIosWeb() && !pwaInstalled,
         onInstall: () => {
           const prompt = installPrompt;
           if (!prompt) return;
@@ -260,6 +262,7 @@ export default function App() {
             window.dispatchEvent(new Event('vtt:pwa-apply-update'));
           }
         },
+        onIosInstallHelp: () => setPwaInstallHelpVisible(true),
       }),
     [installPrompt, pwaInstalled, updateReady],
   );
@@ -571,6 +574,10 @@ export default function App() {
             onAuthenticated={handleAuthenticated}
             onLocalMode={handleLocalMode}
           />
+          <PwaInstallHelpModal
+            visible={pwaInstallHelpVisible}
+            onClose={() => setPwaInstallHelpVisible(false)}
+          />
         </View>
       </SafeAreaView>
     );
@@ -661,6 +668,10 @@ export default function App() {
           onClose={() => setIdeaEditorVisible(false)}
           onSave={saveIdea}
         />
+        <PwaInstallHelpModal
+          visible={pwaInstallHelpVisible}
+          onClose={() => setPwaInstallHelpVisible(false)}
+        />
       </View>
     </SafeAreaView>
   );
@@ -723,18 +734,32 @@ function isStandalonePwa() {
   return standaloneDisplay || navigatorWithStandalone.standalone === true;
 }
 
+function isIosWeb() {
+  if (Platform.OS !== 'web' || typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent || '';
+  const navigatorWithTouch = navigator as Navigator & { maxTouchPoints?: number };
+  return (
+    /iPhone|iPad|iPod/i.test(userAgent) ||
+    (/Macintosh/i.test(userAgent) && (navigatorWithTouch.maxTouchPoints ?? 0) > 1)
+  );
+}
+
 function getPwaAction({
   installPrompt,
   pwaInstalled,
   updateReady,
+  iosInstallAvailable,
   onInstall,
   onUpdate,
+  onIosInstallHelp,
 }: {
   installPrompt: BeforeInstallPromptEvent | null;
   pwaInstalled: boolean;
   updateReady: boolean;
+  iosInstallAvailable: boolean;
   onInstall: () => void;
   onUpdate: () => void;
+  onIosInstallHelp: () => void;
 }): PwaAction | undefined {
   if (updateReady) {
     return {
@@ -750,6 +775,14 @@ function getPwaAction({
       status: 'Можно установить',
       tone: 'install',
       onPress: onInstall,
+    };
+  }
+  if (iosInstallAvailable) {
+    return {
+      label: 'Как установить',
+      status: 'Установка на iPhone',
+      tone: 'install',
+      onPress: onIosInstallHelp,
     };
   }
   return undefined;
@@ -956,6 +989,7 @@ function PwaActionBar({ action }: { action?: PwaAction }) {
         ]}
       >
         <Text
+          numberOfLines={1}
           style={[
             styles.pwaActionButtonText,
             action.tone === 'update' && styles.pwaActionButtonTextAccent,
@@ -964,6 +998,51 @@ function PwaActionBar({ action }: { action?: PwaAction }) {
           {action.label}
         </Text>
       </Pressable>
+    </View>
+  );
+}
+
+function PwaInstallHelpModal({
+  visible,
+  onClose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.pwaHelpSheet}>
+          <View style={styles.editorHeader}>
+            <Text style={styles.editorTitle}>Установка на iPhone</Text>
+            <Pressable onPress={onClose} style={styles.editorCloseButton}>
+              <X size={24} color={colors.text} />
+            </Pressable>
+          </View>
+          <View style={styles.pwaHelpSteps}>
+            <PwaInstallStep index="1" text="Открой veratt.ru в Safari." />
+            <PwaInstallStep index="2" text="Нажми «Поделиться» в нижней панели." />
+            <PwaInstallStep index="3" text="Выбери «На экран Домой» и подтверди добавление." />
+          </View>
+          <Text style={styles.pwaHelpNote}>
+            После добавления приложение откроется с иконки на домашнем экране и будет работать как PWA.
+          </Text>
+          <Pressable onPress={onClose} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Понятно</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PwaInstallStep({ index, text }: { index: string; text: string }) {
+  return (
+    <View style={styles.pwaHelpStep}>
+      <View style={styles.pwaHelpStepNumber}>
+        <Text style={styles.pwaHelpStepNumberText}>{index}</Text>
+      </View>
+      <Text style={styles.pwaHelpStepText}>{text}</Text>
     </View>
   );
 }
@@ -2055,6 +2134,7 @@ const styles = StyleSheet.create({
   },
   pwaActionButton: {
     minHeight: 30,
+    maxWidth: 136,
     paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2507,6 +2587,55 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  pwaHelpSheet: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 24,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: colors.bg,
+  },
+  pwaHelpSteps: {
+    marginTop: 10,
+    gap: 10,
+  },
+  pwaHelpStep: {
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  pwaHelpStepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+  },
+  pwaHelpStepNumberText: {
+    color: '#ffffff',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  pwaHelpStepText: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  pwaHelpNote: {
+    marginTop: 12,
+    color: '#555555',
+    fontSize: 14,
+    lineHeight: 20,
   },
   editorSheet: {
     maxHeight: '92%',
