@@ -51,6 +51,7 @@ DNS must contain an A record:
 
 ```text
 veratt.ru -> 217.114.9.114
+www.veratt.ru -> 217.114.9.114
 ```
 
 Caddy will issue and renew the Let's Encrypt certificate after DNS points to the server and ports 80/443 are reachable.

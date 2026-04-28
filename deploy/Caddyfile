@@ -1,3 +1,7 @@
+www.veratt.ru {
+	redir https://veratt.ru{uri} permanent
+}
+
 veratt.ru {
 	encode zstd gzip
 
