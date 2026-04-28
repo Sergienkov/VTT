@@ -34,6 +34,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "40ef9bcf-12bd-46f0-99f4-d27c274ca364"
+      }
+    },
+    "owner": "sergienkov"
   }
 }
