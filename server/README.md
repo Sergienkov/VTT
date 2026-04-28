@@ -67,7 +67,13 @@ The seeded test user is:
 - `GET /sync`
 - `POST /sync/push`
 
-State is currently in memory. The next backend step is replacing `MemoryStore` with a database repository that preserves the same route contract.
+State is kept in memory by default. Set `DATA_FILE` to persist snapshots:
+
+```bash
+DATA_FILE=/data/store.json bun src/index.ts
+```
+
+The Docker Compose setup already mounts `/data` as a named volume. The next backend step is replacing `MemoryStore` with Postgres-backed repositories that preserve the same route contract.
 
 ## Docker
 

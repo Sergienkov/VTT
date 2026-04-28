@@ -22,6 +22,7 @@ The repository includes:
 - `.github/workflows/deploy-server.yml` for manual SSH deployment.
 - `server/Dockerfile` for the Bun/Hono API.
 - `deploy/docker-compose.yml` for running the API container.
+- A Docker volume named `api-data` for `/data/store.json`, the current MVP persistence file.
 
 The deploy workflow expects these GitHub repository secrets:
 
@@ -83,6 +84,8 @@ git reset --hard origin/main
 docker compose -f deploy/docker-compose.yml up -d --build
 curl -fsS http://127.0.0.1:8787/health
 ```
+
+The current MVP uses JSON snapshot persistence at `/data/store.json` inside the API container. Docker keeps it in the `api-data` volume, so regular redeploys and container restarts do not erase data.
 
 ## Production Notes
 

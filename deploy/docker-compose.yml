@@ -8,5 +8,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8787
+      DATA_FILE: /data/store.json
     ports:
       - "${API_PORT:-8787}:8787"
+    volumes:
+      - api-data:/data
+
+volumes:
+  api-data:

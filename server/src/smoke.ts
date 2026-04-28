@@ -1,4 +1,6 @@
 import { app } from './app';
+import { MemoryStore } from './store';
+import { rmSync } from 'node:fs';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -39,6 +41,20 @@ const ideas = await json(
   }),
 );
 assert(Array.isArray(ideas.items), 'ideas list failed');
+
+const dataFile = `/tmp/task-manager-store-${crypto.randomUUID()}.json`;
+const firstStore = new MemoryStore({ persistencePath: dataFile });
+firstStore.createTask('user_1', {
+  title: 'Persistent smoke task',
+  date: '2026-04-28',
+});
+const secondStore = new MemoryStore({ persistencePath: dataFile });
+const persistedTasks = secondStore.listTasksForUser('user_1');
+assert(
+  persistedTasks.some((task) => task.title === 'Persistent smoke task'),
+  'persistent store failed',
+);
+rmSync(dataFile, { force: true });
 
 console.log('server smoke ok');
 

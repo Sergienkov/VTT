@@ -46,6 +46,7 @@ Use `.env.example` as the template. On a physical iOS/Android device, replace `l
 ## Backend
 
 The backend is TypeScript + Hono for Bun. It currently uses in-memory state while keeping the route contract close to `docs/api-contract.md`.
+In Docker it persists MVP data to `/data/store.json` through the `api-data` volume.
 
 ```bash
 npm run server:typecheck

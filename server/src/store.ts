@@ -11,6 +11,8 @@ import type {
   TaskStatus,
   User,
 } from './types';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 type CreateTaskInput = {
   id?: string;
@@ -42,10 +44,23 @@ type RejectedSyncChange = {
   reason: string;
 };
 
+type StoreSnapshot = {
+  version: 1;
+  users: User[];
+  phoneChallenges: PhoneChallenge[];
+  sessions: Session[];
+  tasks: Task[];
+  comments: Comment[];
+  ideas: Idea[];
+  events: Event[];
+  deviceTokens: DeviceToken[];
+};
+
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const OTP_TTL_MS = 1000 * 60 * 10;
 
 export class MemoryStore {
+  private persistencePath?: string;
   private users = new Map<string, User>();
   private usersByPhone = new Map<string, string>();
   private phoneChallenges = new Map<string, PhoneChallenge>();
@@ -56,8 +71,13 @@ export class MemoryStore {
   private events = new Map<string, Event>();
   private deviceTokens = new Map<string, DeviceToken>();
 
-  constructor() {
-    this.seed();
+  constructor(options: { persistencePath?: string } = {}) {
+    this.persistencePath = options.persistencePath;
+    const restored = this.restore();
+    if (!restored) {
+      this.seed();
+      this.persist();
+    }
   }
 
   health() {
@@ -66,6 +86,7 @@ export class MemoryStore {
       users: this.users.size,
       tasks: this.tasks.size,
       ideas: this.ideas.size,
+      persistent: Boolean(this.persistencePath),
     };
   }
 
@@ -77,6 +98,7 @@ export class MemoryStore {
       expiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
     };
     this.phoneChallenges.set(challenge.id, challenge);
+    this.persist();
     return challenge;
   }
 
@@ -113,6 +135,7 @@ export class MemoryStore {
     if (!session) return;
     session.revokedAt = nowIso();
     this.sessions.set(accessToken, session);
+    this.persist();
   }
 
   getSessionByAccessToken(accessToken: string) {
@@ -136,6 +159,7 @@ export class MemoryStore {
       updatedAt: nowIso(),
     };
     this.users.set(userId, next);
+    this.persist();
     return next;
   }
 
@@ -197,6 +221,7 @@ export class MemoryStore {
     };
     this.tasks.set(task.id, task);
     this.emitTaskEvent(task, ownerId, 'task_created');
+    this.persist();
     return task;
   }
 
@@ -223,6 +248,7 @@ export class MemoryStore {
     };
     this.tasks.set(taskId, next);
     this.emitTaskEvent(next, userId, 'task_updated');
+    this.persist();
     return next;
   }
 
@@ -233,6 +259,7 @@ export class MemoryStore {
     const next = { ...task, deletedAt: timestamp, updatedAt: timestamp };
     this.tasks.set(taskId, next);
     this.emitTaskEvent(next, userId, 'task_updated');
+    this.persist();
     return next;
   }
 
@@ -252,6 +279,7 @@ export class MemoryStore {
       updatedAt: timestamp,
     };
     this.tasks.set(taskId, next);
+    this.persist();
     return next;
   }
 
@@ -279,6 +307,7 @@ export class MemoryStore {
     };
     this.comments.set(comment.id, comment);
     this.emitTaskEvent(task, userId, 'task_updated');
+    this.persist();
     return comment;
   }
 
@@ -288,6 +317,7 @@ export class MemoryStore {
     if (!this.getTaskForUser(comment.taskId, userId)) return null;
     const next = { ...comment, body, updatedAt: nowIso() };
     this.comments.set(commentId, next);
+    this.persist();
     return next;
   }
 
@@ -298,6 +328,7 @@ export class MemoryStore {
     const timestamp = nowIso();
     const next = { ...comment, deletedAt: timestamp, updatedAt: timestamp };
     this.comments.set(commentId, next);
+    this.persist();
     return next;
   }
 
@@ -327,6 +358,7 @@ export class MemoryStore {
       updatedAt: timestamp,
     };
     this.ideas.set(idea.id, idea);
+    this.persist();
     return idea;
   }
 
@@ -340,6 +372,7 @@ export class MemoryStore {
       updatedAt: nowIso(),
     };
     this.ideas.set(ideaId, next);
+    this.persist();
     return next;
   }
 
@@ -349,6 +382,7 @@ export class MemoryStore {
     const timestamp = nowIso();
     const next = { ...idea, deletedAt: timestamp, updatedAt: timestamp };
     this.ideas.set(ideaId, next);
+    this.persist();
     return next;
   }
 
@@ -374,6 +408,7 @@ export class MemoryStore {
     });
     const nextIdea = { ...idea, convertedTaskId: task.id, updatedAt: nowIso() };
     this.ideas.set(ideaId, nextIdea);
+    this.persist();
     return { idea: nextIdea, task };
   }
 
@@ -420,6 +455,7 @@ export class MemoryStore {
     if (!event || event.userId !== userId) return null;
     const next = { ...event, readAt: nowIso() };
     this.events.set(eventId, next);
+    this.persist();
     return next;
   }
 
@@ -433,6 +469,7 @@ export class MemoryStore {
       createdAt: timestamp,
     };
     this.deviceTokens.set(deviceToken.id, deviceToken);
+    this.persist();
     return deviceToken;
   }
 
@@ -441,6 +478,7 @@ export class MemoryStore {
     if (!token || token.userId !== userId || token.deletedAt) return null;
     const next = { ...token, deletedAt: nowIso() };
     this.deviceTokens.set(tokenId, next);
+    this.persist();
     return next;
   }
 
@@ -560,6 +598,47 @@ export class MemoryStore {
     throw new Error('unsupported_change');
   }
 
+  private restore() {
+    if (!this.persistencePath || !existsSync(this.persistencePath)) return false;
+
+    const snapshot = JSON.parse(readFileSync(this.persistencePath, 'utf8')) as StoreSnapshot;
+    if (snapshot.version !== 1) {
+      throw new Error(`unsupported_store_snapshot_version:${String(snapshot.version)}`);
+    }
+
+    this.users = mapById(snapshot.users);
+    this.usersByPhone = new Map(snapshot.users.map((user) => [user.phone, user.id]));
+    this.phoneChallenges = mapById(snapshot.phoneChallenges);
+    this.sessions = new Map(snapshot.sessions.map((session) => [session.accessToken, session]));
+    this.tasks = mapById(snapshot.tasks);
+    this.comments = mapById(snapshot.comments);
+    this.ideas = mapById(snapshot.ideas);
+    this.events = mapById(snapshot.events);
+    this.deviceTokens = mapById(snapshot.deviceTokens);
+    return true;
+  }
+
+  private persist() {
+    if (!this.persistencePath) return;
+
+    const snapshot: StoreSnapshot = {
+      version: 1,
+      users: [...this.users.values()],
+      phoneChallenges: [...this.phoneChallenges.values()],
+      sessions: [...this.sessions.values()],
+      tasks: [...this.tasks.values()],
+      comments: [...this.comments.values()],
+      ideas: [...this.ideas.values()],
+      events: [...this.events.values()],
+      deviceTokens: [...this.deviceTokens.values()],
+    };
+
+    mkdirSync(dirname(this.persistencePath), { recursive: true });
+    const tmpPath = `${this.persistencePath}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2));
+    renameSync(tmpPath, this.persistencePath);
+  }
+
   private createSession(userId: string) {
     const session: Session = {
       id: id('session'),
@@ -569,6 +648,7 @@ export class MemoryStore {
       expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
     };
     this.sessions.set(session.accessToken, session);
+    this.persist();
     return session;
   }
 
@@ -580,6 +660,7 @@ export class MemoryStore {
       if (!name || existingUser.name) return existingUser;
       const next = { ...existingUser, name, updatedAt: nowIso() };
       this.users.set(existingUserId, next);
+      this.persist();
       return next;
     }
 
@@ -593,6 +674,7 @@ export class MemoryStore {
     };
     this.users.set(user.id, user);
     this.usersByPhone.set(phone, user.id);
+    this.persist();
     return user;
   }
 
@@ -789,7 +871,7 @@ export class MemoryStore {
   }
 }
 
-export const store = new MemoryStore();
+export const store = new MemoryStore({ persistencePath: process.env.DATA_FILE || undefined });
 
 export function taskInputFromRecord(record: Record<string, unknown>): CreateTaskInput {
   return {
@@ -880,6 +962,10 @@ function isAfterCursor(value: string, cursor?: string) {
 
 function unique(items: string[]) {
   return [...new Set(items.filter(Boolean))];
+}
+
+function mapById<T extends { id: string }>(items: T[]) {
+  return new Map(items.map((item) => [item.id, item]));
 }
 
 function id(prefix: string) {
