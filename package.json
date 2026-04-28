@@ -11,6 +11,7 @@
     "ios": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --ios",
     "web": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli start --web",
     "web:export": "EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli export -p web --output-dir dist",
+    "web:export:prod": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_API_URL=https://veratt.ru/api EXPO_HOME=.expo-home EXPO_NO_TELEMETRY=1 node ./node_modules/expo/bin/cli export -p web --output-dir dist --clear",
     "web:preview": "node scripts/serve-web.mjs dist 8082",
     "server:dev": "bun --watch server/src/index.ts",
     "server:start": "bun server/src/index.ts",

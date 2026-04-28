@@ -12,16 +12,17 @@ Minimum staging server:
 - 20 GB disk
 - Docker and Docker Compose plugin
 - SSH access from GitHub Actions
-- A domain or subdomain for the API, for example `api.task-manager.example`
+- A domain for the PWA and API, currently `veratt.ru`
 
 ## Current CD Shape
 
 The repository includes:
 
 - `.github/workflows/ci.yml` for typechecking the Expo app and Hono server.
-- `.github/workflows/deploy-server.yml` for manual SSH deployment.
+- `.github/workflows/deploy-server.yml` for manual SSH deployment of the API and PWA.
 - `server/Dockerfile` for the Bun/Hono API.
-- `deploy/docker-compose.yml` for running the API container.
+- `deploy/docker-compose.yml` for running the API and Caddy containers.
+- `deploy/Caddyfile` for serving the PWA at `/` and reverse proxying API requests from `/api/*`.
 - A Docker volume named `api-data` for `/data/store.json`, the current MVP persistence file.
 
 The deploy workflow expects these GitHub repository secrets:
@@ -36,6 +37,21 @@ Current staging server:
 ```text
 http://217.114.9.114:8787
 ```
+
+Current production domain shape:
+
+```text
+https://veratt.ru
+https://veratt.ru/api/health
+```
+
+DNS must contain an A record:
+
+```text
+veratt.ru -> 217.114.9.114
+```
+
+Caddy will issue and renew the Let's Encrypt certificate after DNS points to the server and ports 80/443 are reachable.
 
 A dedicated deploy key was generated locally at `.deploy/github-actions-vtt-deploy`. The `.deploy/` directory is gitignored. Its public key is already installed in `root@217.114.9.114:~/.ssh/authorized_keys`.
 
@@ -86,13 +102,25 @@ sudo chown "$USER:$USER" /opt/task-manager
 curl -fsS http://SERVER_HOST:8787/health
 ```
 
-Manual update on the current server:
+Manual update from the local machine:
 
 ```bash
-ssh root@217.114.9.114
+npm run web:export:prod
+tar -czf /tmp/task-manager-web-dist.tar.gz -C dist .
+scp -i .deploy/github-actions-vtt-deploy /tmp/task-manager-web-dist.tar.gz root@217.114.9.114:/tmp/task-manager-web-dist.tar.gz
+ssh -i .deploy/github-actions-vtt-deploy root@217.114.9.114
+```
+
+Then on the server:
+
+```bash
+set -e
 cd /opt/task-manager
 git fetch origin main
 git reset --hard origin/main
+mkdir -p web
+rm -rf web/*
+tar -xzf /tmp/task-manager-web-dist.tar.gz -C web
 docker compose -f deploy/docker-compose.yml up -d --build
 curl -fsS http://127.0.0.1:8787/health
 ```
@@ -105,7 +133,6 @@ Staging also sets `DEV_AUTH_CODE=1234` because SMS delivery is not connected yet
 
 Before real users:
 
-- Put the API behind HTTPS with Nginx or Caddy.
 - Replace `MemoryStore` with Postgres-backed repositories.
 - Move OTP delivery to an SMS provider.
 - Add persistent refresh token storage and token revocation.

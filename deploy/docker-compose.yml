@@ -15,5 +15,22 @@ services:
     volumes:
       - api-data:/data
 
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: task-manager-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/task-manager/web:/srv/web:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   api-data:
+  caddy-data:
+  caddy-config:

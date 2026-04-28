@@ -56,6 +56,12 @@ npm run web:export
 npm run web:preview
 ```
 
+Production PWA export for `veratt.ru`:
+
+```bash
+npm run web:export:prod
+```
+
 Preview server:
 
 ```text
@@ -64,7 +70,7 @@ http://localhost:8082
 
 The PWA shell includes a web manifest, install icons, and a service worker for the exported build. The service worker is disabled on Expo's `localhost:8081` dev server to avoid stale development bundles.
 
-For public HTTPS hosting, the API also needs HTTPS. Browsers block calls from an HTTPS PWA to the current HTTP staging API.
+Production web is expected at `https://veratt.ru`, with API calls proxied through `https://veratt.ru/api`.
 
 The app reads the API URL from:
 
