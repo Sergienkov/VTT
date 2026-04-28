@@ -48,7 +48,7 @@ import {
   verifyPhoneLogin,
 } from './src/apiClient';
 import { clearAuthState, loadAuthState, saveAuthState } from './src/authRepository';
-import { AuthState, Idea, Task, TaskDraft, TaskStatus, TODAY } from './src/domain';
+import { AuthState, Idea, Task, TaskDraft, TaskStatus, TODAY, TOMORROW } from './src/domain';
 import { loadLocalState, saveLocalState } from './src/localTaskRepository';
 import { seedIdeas, seedTasks } from './src/seedData';
 
@@ -396,7 +396,7 @@ export default function App() {
           <>
             <Header
               title={getHeaderTitle(view, tasks.length)}
-              subtitle={view === 'day' ? 'четверг, 9 октября' : syncStatus}
+              subtitle={view === 'day' ? formatLongDate(TODAY) : syncStatus}
               centered={view === 'day'}
               unreadCount={unreadCount}
               sessionLabel={syncStatus}
@@ -814,7 +814,7 @@ function TimelineScreen({ tasks, onBack }: { tasks: Task[]; onBack: () => void }
           <ChevronLeft size={27} color={colors.text} strokeWidth={2} />
           <View>
             <Text style={styles.headerTitle}>Сегодня</Text>
-            <Text style={styles.headerSubtitle}>четверг, 9 октября</Text>
+            <Text style={styles.headerSubtitle}>{formatLongDate(TODAY)}</Text>
           </View>
           <ChevronRight size={27} color={colors.text} strokeWidth={2} />
         </Pressable>
@@ -1405,9 +1405,19 @@ function parseOptionalInt(value: string) {
 
 function formatDate(date: string) {
   if (date === TODAY) return 'Сегодня';
-  if (date === '2025-10-10') return 'Завтра';
+  if (date === TOMORROW) return 'Завтра';
   const [, month, day] = date.split('-');
   return `${Number(day)}.${month}`;
+}
+
+function formatLongDate(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  const value = new Date(year, month - 1, day);
+  return new Intl.DateTimeFormat('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(value);
 }
 
 function formatTaskMeta(task: Task) {

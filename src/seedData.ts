@@ -1,4 +1,6 @@
-import { Idea, Task, TODAY } from './domain';
+import { addDays, Idea, Task, TODAY, TOMORROW } from './domain';
+
+const seedTimestamp = new Date().toISOString();
 
 export const seedTasks: Task[] = [
   createSeedTask({
@@ -56,14 +58,14 @@ export const seedTasks: Task[] = [
   createSeedTask({
     id: 'task-7',
     title: 'Обновить раздел "Партнёры" на сайте',
-    date: '2025-10-07',
+    date: addDays(TODAY, -2),
     assignee: 'Алексей',
     important: true,
   }),
   createSeedTask({
     id: 'task-8',
     title: 'Проверить состояние транспортных кейсов',
-    date: '2025-11-11',
+    date: addDays(TODAY, 33),
     time: '10:30',
     assignee: 'Денис',
     linkedUser: 'Денис',
@@ -72,7 +74,7 @@ export const seedTasks: Task[] = [
   createSeedTask({
     id: 'task-9',
     title: 'Уточнить контактное лицо в депо Калужское',
-    date: '2025-10-10',
+    date: TOMORROW,
     time: '12:30',
     assignee: 'Михаил',
     linkedUser: 'Михаил',
@@ -81,7 +83,7 @@ export const seedTasks: Task[] = [
   createSeedTask({
     id: 'task-10',
     title: 'Проверить оформление актов выполненных работ',
-    date: '2025-10-11',
+    date: addDays(TODAY, 2),
     assignee: 'Лидия',
     linkedUser: 'Лидия',
     status: 'completed',
@@ -94,27 +96,26 @@ export const seedIdeas: Idea[] = [
     title: 'Переносная энергостанция в защитном кейсе',
     description:
       'LiFePO4-батарея, инвертор и понятный индикатор заряда в компактном кейсе.',
-    createdAt: '2025-10-09T09:00:00.000Z',
+    createdAt: seedTimestamp,
   },
   {
     id: 'idea-2',
     title: 'Диагностический модуль OBD-II с предиктивной аналитикой',
-    createdAt: '2025-10-09T09:10:00.000Z',
+    createdAt: seedTimestamp,
   },
   {
     id: 'idea-3',
     title: 'Герметичные кейсы с Bluetooth-мониторингом состояния батареи',
-    createdAt: '2025-10-09T09:20:00.000Z',
+    createdAt: seedTimestamp,
   },
   {
     id: 'idea-4',
     title: 'Микропроизводство корпусов и кейсов на 3D-принтерах',
-    createdAt: '2025-10-09T09:30:00.000Z',
+    createdAt: seedTimestamp,
   },
 ];
 
 function createSeedTask(task: Partial<Task> & Pick<Task, 'id' | 'title' | 'date'>): Task {
-  const timestamp = '2025-10-09T09:00:00.000Z';
   return {
     description: '',
     durationMinutes: undefined,
@@ -125,8 +126,8 @@ function createSeedTask(task: Partial<Task> & Pick<Task, 'id' | 'title' | 'date'
     important: false,
     seen: true,
     comments: [],
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    createdAt: seedTimestamp,
+    updatedAt: seedTimestamp,
     ...task,
   };
 }

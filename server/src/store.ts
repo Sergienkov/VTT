@@ -715,7 +715,8 @@ export class MemoryStore {
   }
 
   private seed() {
-    const timestamp = '2025-10-09T09:00:00.000Z';
+    const today = dateKey();
+    const timestamp = new Date().toISOString();
     const me: User = {
       id: 'user_1',
       phone: '+79990000000',
@@ -756,7 +757,7 @@ export class MemoryStore {
         ownerId: me.id,
         title: 'Актуализировать статус по задачам Леухина',
         description: 'Сверить прогресс, коротко обновить статус и отметить блокеры на сегодня.',
-        date: '2025-10-09',
+        date: today,
         time: '18:00',
         durationMinutes: 30,
         participantIds: [anna.id],
@@ -769,7 +770,7 @@ export class MemoryStore {
         ownerId: me.id,
         title: 'Подготовить информацию по ключницам в Ростокино и Крюково',
         description: 'Собрать актуальные данные по объектам.',
-        date: '2025-10-09',
+        date: today,
         important: true,
         timestamp,
       }),
@@ -777,7 +778,7 @@ export class MemoryStore {
         id: 'task_3',
         ownerId: me.id,
         title: 'Проверить подписи в корпоративной почте',
-        date: '2025-10-09',
+        date: today,
         time: '12:30',
         durationMinutes: 30,
         focus: true,
@@ -787,7 +788,7 @@ export class MemoryStore {
         id: 'task_4',
         ownerId: alexey.id,
         title: 'Сверить статусы задач по прошлому спринту',
-        date: '2025-10-09',
+        date: today,
         time: '19:30',
         durationMinutes: 60,
         participantIds: [me.id],
@@ -798,7 +799,7 @@ export class MemoryStore {
         id: 'task_5',
         ownerId: denis.id,
         title: 'Проверить состояние транспортных кейсов',
-        date: '2025-11-11',
+        date: addDays(today, 33),
         time: '10:30',
         participantIds: [me.id],
         timestamp,
@@ -982,4 +983,18 @@ function randomOtp() {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function dateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(value: string, days: number) {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return dateKey(date);
 }

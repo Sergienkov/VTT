@@ -59,4 +59,19 @@ export type TaskDraft = {
   important: boolean;
 };
 
-export const TODAY = '2025-10-09';
+export const TODAY = formatDateKey();
+export const TOMORROW = addDays(TODAY, 1);
+
+export function formatDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function addDays(dateKey: string, days: number) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return formatDateKey(date);
+}
