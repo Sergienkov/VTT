@@ -31,6 +31,12 @@ The seeded test user is:
 +79990000000
 ```
 
+For staging without SMS delivery, set:
+
+```bash
+DEV_AUTH_CODE=1234
+```
+
 ## Implemented MVP Surface
 
 - `POST /auth/phone/start`

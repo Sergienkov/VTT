@@ -62,7 +62,9 @@ app.post('/auth/phone/start', async (c) => {
     challengeId: challenge.id,
     expiresAt: challenge.expiresAt,
   };
-  if (process.env.NODE_ENV !== 'production') response.devCode = challenge.code;
+  if (process.env.NODE_ENV !== 'production' || process.env.DEV_AUTH_CODE) {
+    response.devCode = challenge.code;
+  }
   return c.json(response);
 });
 

@@ -94,7 +94,7 @@ export class MemoryStore {
     const challenge: PhoneChallenge = {
       id: id('otp'),
       phone,
-      code: process.env.NODE_ENV === 'production' ? randomOtp() : '1234',
+      code: process.env.DEV_AUTH_CODE ?? (process.env.NODE_ENV === 'production' ? randomOtp() : '1234'),
       expiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
     };
     this.phoneChallenges.set(challenge.id, challenge);

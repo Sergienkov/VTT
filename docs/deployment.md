@@ -87,6 +87,8 @@ curl -fsS http://127.0.0.1:8787/health
 
 The current MVP uses JSON snapshot persistence at `/data/store.json` inside the API container. Docker keeps it in the `api-data` volume, so regular redeploys and container restarts do not erase data.
 
+Staging also sets `DEV_AUTH_CODE=1234` because SMS delivery is not connected yet. Remove this env var before using real phone auth in production.
+
 ## Production Notes
 
 Before real users:
