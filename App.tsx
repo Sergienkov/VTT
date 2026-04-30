@@ -1270,21 +1270,11 @@ function TaskContextMenuOverlay({
   items,
   onClose,
   anchorY,
-  hideFocusBadge,
-  hideImportantBadge,
-  highlightImportant,
-  hideAccent,
-  showLinkDetails = true,
 }: {
   task: Task | null;
   items: ActionMenuItem[];
   onClose: () => void;
   anchorY?: number;
-  hideFocusBadge?: boolean;
-  hideImportantBadge?: boolean;
-  highlightImportant?: boolean;
-  hideAccent?: boolean;
-  showLinkDetails?: boolean;
 }) {
   if (!task) return null;
   const paneOffset =
@@ -1303,11 +1293,6 @@ function TaskContextMenuOverlay({
         >
           <TaskCard
             task={task}
-            hideFocusBadge={hideFocusBadge}
-            hideImportantBadge={hideImportantBadge}
-            highlightImportant={highlightImportant}
-            hideAccent={hideAccent}
-            showLinkDetails={showLinkDetails}
             onPress={() => undefined}
             onToggle={() => undefined}
           />
@@ -1493,7 +1478,6 @@ function DayScreen({
             empty="Нет задач в фокусе"
             expandedTaskId={expandedTaskId}
             draggingTaskId={draggingTaskId}
-            hideFocusBadge
             dragAttributesForTask={dragAttributesForTask}
             onTaskPress={toggleTaskExpansion}
             onTaskLongPress={(task, event) => {
@@ -1520,7 +1504,10 @@ function DayScreen({
             draggingTaskId={draggingTaskId}
             dragAttributesForTask={dragAttributesForTask}
             onTaskPress={toggleTaskExpansion}
-            onTaskLongPress={(task) => setMenuTask(task)}
+            onTaskLongPress={(task, event) => {
+              setMenuTask(task);
+              setMenuAnchorY(event?.nativeEvent?.pageY);
+            }}
             onToggle={onToggle}
           />
         ) : null}
@@ -1540,17 +1527,20 @@ function DayScreen({
           draggingTaskId={draggingTaskId}
           dragAttributesForTask={dragAttributesForTask}
           onTaskPress={toggleTaskExpansion}
-          onTaskLongPress={(task) => setMenuTask(task)}
+          onTaskLongPress={(task, event) => {
+            setMenuTask(task);
+            setMenuAnchorY(event?.nativeEvent?.pageY);
+          }}
           onToggle={onToggle}
         />
       ) : null}
       <Text style={styles.footerStat}>
         {tasks.length} задач{'\n'}День загружен на {formatDuration(plannedMinutes)}
       </Text>
-      <ActionMenuModal
-        visible={Boolean(menuTask)}
-        title={menuTask?.title ?? 'Задача'}
+      <TaskContextMenuOverlay
+        task={menuTask}
         onClose={() => setMenuTask(null)}
+        anchorY={menuAnchorY}
         items={[
           {
             label: 'Сделать общей',
@@ -1608,6 +1598,7 @@ function AllTasksScreen({
   onMoveToIdea: (taskId: string) => void;
   onDelete: (taskId: string) => void;
 }) {
+  const [activeExpanded, setActiveExpanded] = useState(true);
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [menuTask, setMenuTask] = useState<Task | null>(null);
@@ -1623,22 +1614,25 @@ function AllTasksScreen({
       {searchVisible || query ? (
         <CompactSearchInput value={query} onChange={onQueryChange} />
       ) : null}
-      <TaskStack
-        tasks={tasks}
-        empty="Ничего не найдено"
-        expandedTaskId={expandedTaskId}
-        hideFocusBadge
-        hideImportantBadge
-        highlightImportant
-        hideAccent
-        showLinkDetails={false}
-        onTaskPress={toggleTaskExpansion}
-        onTaskLongPress={(task, event) => {
-          setMenuTask(task);
-          setMenuAnchorY(event?.nativeEvent?.pageY);
-        }}
-        onToggle={onToggle}
+      <SectionTitle
+        title={`Задачи (${tasks.length})`}
+        collapsible
+        expanded={activeExpanded}
+        onPress={() => setActiveExpanded((current) => !current)}
       />
+      {activeExpanded ? (
+        <TaskStack
+          tasks={tasks}
+          empty="Ничего не найдено"
+          expandedTaskId={expandedTaskId}
+          onTaskPress={toggleTaskExpansion}
+          onTaskLongPress={(task, event) => {
+            setMenuTask(task);
+            setMenuAnchorY(event?.nativeEvent?.pageY);
+          }}
+          onToggle={onToggle}
+        />
+      ) : null}
       <SectionTitle
         title={`Выполненные задачи (${completedTasks.length})`}
         collapsible
@@ -1650,11 +1644,6 @@ function AllTasksScreen({
           tasks={completedTasks}
           empty="Пока нет выполненных задач"
           expandedTaskId={expandedTaskId}
-          hideFocusBadge
-          hideImportantBadge
-          highlightImportant
-          hideAccent
-          showLinkDetails={false}
           rightActionForTask={(task) => ({
             icon: Trash2,
             label: 'Удалить',
@@ -1673,11 +1662,6 @@ function AllTasksScreen({
         task={menuTask}
         onClose={() => setMenuTask(null)}
         anchorY={menuAnchorY}
-        hideFocusBadge
-        hideImportantBadge
-        highlightImportant
-        hideAccent
-        showLinkDetails={false}
         items={[
           {
             label: 'Отметить как важное',
@@ -1784,8 +1768,6 @@ function LinksScreen({
             tasks={sectionTasks}
             empty="Задач нет"
             expandedTaskId={expandedTaskId}
-            hideFocusBadge
-            highlightImportant
             onTaskPress={toggleTaskExpansion}
             onTaskLongPress={(task, event) => {
               setMenuTask(task);
@@ -1842,8 +1824,6 @@ function LinksScreen({
         task={menuTask}
         onClose={() => setMenuTask(null)}
         anchorY={menuAnchorY}
-        hideFocusBadge
-        highlightImportant
         items={[
           {
             label: 'Отметить как важное',
@@ -2533,11 +2513,6 @@ function TaskStack({
   empty,
   expandedTaskId,
   draggingTaskId,
-  hideFocusBadge,
-  hideImportantBadge,
-  highlightImportant,
-  hideAccent,
-  showLinkDetails = true,
   rightActionForTask,
   dragAttributesForTask,
   onTaskPress,
@@ -2549,11 +2524,6 @@ function TaskStack({
   empty?: string;
   expandedTaskId?: string | null;
   draggingTaskId?: string | null;
-  hideFocusBadge?: boolean;
-  hideImportantBadge?: boolean;
-  highlightImportant?: boolean;
-  hideAccent?: boolean;
-  showLinkDetails?: boolean;
   rightActionForTask?: (task: Task) => CardAction | undefined;
   dragAttributesForTask?: (task: Task, list: DayTaskListKey) => Record<string, unknown> | undefined;
   onTaskPress: (taskId: string) => void;
@@ -2576,11 +2546,6 @@ function TaskStack({
           task={task}
           expanded={expandedTaskId === task.id}
           dragging={draggingTaskId === task.id}
-          hideFocusBadge={hideFocusBadge}
-          hideImportantBadge={hideImportantBadge}
-          highlightImportant={highlightImportant}
-          hideAccent={hideAccent}
-          showLinkDetails={showLinkDetails}
           rightAction={rightActionForTask?.(task)}
           dragAttributes={
             listKey && dragAttributesForTask ? dragAttributesForTask(task, listKey) : undefined
@@ -2598,11 +2563,6 @@ function TaskCard({
   task,
   expanded,
   dragging,
-  hideFocusBadge,
-  hideImportantBadge,
-  highlightImportant,
-  hideAccent,
-  showLinkDetails = true,
   rightAction,
   dragAttributes,
   onPress,
@@ -2612,19 +2572,14 @@ function TaskCard({
   task: Task;
   expanded?: boolean;
   dragging?: boolean;
-  hideFocusBadge?: boolean;
-  hideImportantBadge?: boolean;
-  highlightImportant?: boolean;
-  hideAccent?: boolean;
-  showLinkDetails?: boolean;
   rightAction?: CardAction;
   dragAttributes?: Record<string, unknown>;
   onPress: () => void;
   onLongPress?: (event: any) => void;
   onToggle: () => void;
 }) {
-  const accent = hideAccent ? 'transparent' : getAccent(task);
   const RightIcon = rightAction?.icon;
+  const hasOwner = Boolean(task.linkedUser);
 
   return (
     <Pressable
@@ -2634,7 +2589,7 @@ function TaskCard({
       delayLongPress={360}
       style={[
         styles.taskCard,
-        highlightImportant && task.important && styles.taskCardImportant,
+        task.important && styles.taskCardImportant,
         expanded && styles.taskCardExpanded,
         dragging && styles.taskCardDragging,
       ]}
@@ -2644,18 +2599,14 @@ function TaskCard({
           {task.status === 'completed' ? <Check size={15} color={colors.text} /> : null}
         </Pressable>
         <View style={styles.taskMain}>
-          <View style={styles.taskBadges}>
-            {task.linkedUser ? (
+          {hasOwner ? (
+            <View style={styles.taskBadges}>
               <View style={styles.ownerRow}>
                 <Users size={15} color="#111827" fill="#111827" strokeWidth={2} />
                 <Text style={styles.ownerText}>{task.linkedUser}</Text>
               </View>
-            ) : null}
-            {task.focus && !hideFocusBadge ? <Text style={styles.badgeText}>Фокус</Text> : null}
-            {task.important && !hideImportantBadge ? (
-              <Text style={styles.badgeText}>Важное</Text>
-            ) : null}
-          </View>
+            </View>
+          ) : null}
           <Text
             style={[styles.taskTitle, task.status === 'completed' && styles.taskTitleCompleted]}
             numberOfLines={2}
@@ -2693,19 +2644,12 @@ function TaskCard({
           </View>
         )}
       </View>
-      {expanded ? <TaskInlineDetails task={task} showLinkDetails={showLinkDetails} /> : null}
-      <View style={[styles.accentRail, { backgroundColor: accent }]} />
+      {expanded ? <TaskInlineDetails task={task} /> : null}
     </Pressable>
   );
 }
 
-function TaskInlineDetails({
-  task,
-  showLinkDetails = true,
-}: {
-  task: Task;
-  showLinkDetails?: boolean;
-}) {
+function TaskInlineDetails({ task }: { task: Task }) {
   return (
     <View style={styles.taskInlineDetails}>
       <Text style={styles.taskInlineDescription}>
@@ -2716,14 +2660,12 @@ function TaskInlineDetails({
           <Text style={styles.taskInlineMetaLabel}>Результат</Text>
           <Text style={styles.taskInlineMetaValue}>Задача закрыта без лишних уточнений</Text>
         </View>
-        {showLinkDetails ? (
-          <View style={styles.taskInlineMetaItem}>
-            <Text style={styles.taskInlineMetaLabel}>Связь</Text>
-            <Text style={styles.taskInlineMetaValue}>
-              {task.linkedUser ? task.linkedUser : 'Без связанного пользователя'}
-            </Text>
-          </View>
-        ) : null}
+        <View style={styles.taskInlineMetaItem}>
+          <Text style={styles.taskInlineMetaLabel}>Связь</Text>
+          <Text style={styles.taskInlineMetaValue}>
+            {task.linkedUser ? task.linkedUser : 'Без связанного пользователя'}
+          </Text>
+        </View>
       </View>
       {task.comments.length > 0 ? (
         <Text style={styles.taskInlineComments}>Комментарии: {task.comments.length}</Text>
@@ -2905,14 +2847,6 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
-}
-
-function getAccent(task: Task) {
-  if (task.status === 'completed') return '#d9d9d9';
-  if (task.important && task.date < TODAY) return colors.red;
-  if (task.linkedUser && !task.seen) return colors.orange;
-  if (task.focus || task.important) return colors.green;
-  return 'transparent';
 }
 
 function timeRows() {
@@ -3225,25 +3159,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   cardStack: {
-    gap: 8,
+    gap: 7,
   },
   taskCard: {
     position: 'relative',
-    minHeight: 68,
-    paddingVertical: 9,
-    paddingLeft: 13,
-    paddingRight: 12,
+    minHeight: 56,
+    paddingVertical: 7,
+    paddingLeft: 11,
+    paddingRight: 10,
     borderRadius: 8,
     backgroundColor: colors.card,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
     overflow: 'hidden',
   },
   taskCardExpanded: {
-    minHeight: 164,
+    minHeight: 140,
   },
   taskCardImportant: {
     backgroundColor: '#fff6d8',
@@ -3253,14 +3187,14 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.99 }],
   },
   taskRow: {
-    minHeight: 50,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
   },
   checkbox: {
-    width: 21,
-    height: 21,
-    marginRight: 12,
+    width: 20,
+    height: 20,
+    marginRight: 10,
     borderRadius: 4,
     borderWidth: 1.4,
     borderColor: colors.text,
@@ -3272,13 +3206,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingRight: 8,
+    justifyContent: 'center',
   },
   taskBadges: {
-    minHeight: 18,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   ownerRow: {
     flexDirection: 'row',
@@ -3287,18 +3221,13 @@ const styles = StyleSheet.create({
   },
   ownerText: {
     color: '#2a2a2a',
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  badgeText: {
-    color: colors.muted,
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 15,
   },
   taskTitle: {
     color: colors.text,
-    fontSize: 19,
-    lineHeight: 25,
+    fontSize: 16,
+    lineHeight: 21,
     fontWeight: '400',
   },
   taskTitleCompleted: {
@@ -3306,20 +3235,20 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   taskMeta: {
-    width: 74,
+    width: 66,
     alignItems: 'flex-end',
     justifyContent: 'center',
   },
   taskMetaText: {
     color: '#5f5f5f',
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 16,
     textAlign: 'right',
   },
   taskIconAction: {
-    width: 42,
-    height: 42,
-    marginLeft: 8,
+    width: 36,
+    height: 36,
+    marginLeft: 6,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
@@ -3329,16 +3258,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff0f1',
   },
   taskInlineDetails: {
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line,
     gap: 10,
   },
   taskInlineDescription: {
     color: '#3f3f3f',
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: 14,
+    lineHeight: 19,
   },
   taskInlineMetaGrid: {
     flexDirection: 'row',
@@ -3347,7 +3276,7 @@ const styles = StyleSheet.create({
   taskInlineMetaItem: {
     flex: 1,
     minWidth: 0,
-    padding: 10,
+    padding: 8,
     borderRadius: 8,
     backgroundColor: '#f4f4f4',
   },
@@ -3359,20 +3288,13 @@ const styles = StyleSheet.create({
   taskInlineMetaValue: {
     marginTop: 3,
     color: colors.text,
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 13,
+    lineHeight: 17,
   },
   taskInlineComments: {
     color: colors.muted,
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  accentRail: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
+    fontSize: 13,
+    lineHeight: 17,
   },
   emptyCard: {
     minHeight: 58,
