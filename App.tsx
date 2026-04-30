@@ -67,7 +67,6 @@ import { loadPendingMutations, savePendingMutations } from './src/syncQueueRepos
 
 type TabKey = 'day' | 'all' | 'links' | 'ideas';
 type ViewMode = TabKey | 'timeline' | 'detail';
-type TaskFilter = 'all' | 'today' | 'personal' | 'shared' | 'focus';
 type PendingMutationInput =
   | { type: 'createTask' | 'updateTask'; task: Task }
   | { type: 'deleteTask'; taskId: string }
@@ -93,20 +92,20 @@ type ActionMenuItem = {
   onPress: () => void;
 };
 type DayTaskListKey = 'focus' | 'tasks' | 'completed';
+type HeaderTool = 'timeline' | 'search';
+type SharedTabKey = 'others' | 'mine';
+type CardAction = {
+  icon: typeof Plus;
+  label: string;
+  destructive?: boolean;
+  onPress: () => void;
+};
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Sun }> = [
   { key: 'day', label: 'День', icon: Sun },
   { key: 'all', label: 'Все задачи', icon: CheckSquare },
-  { key: 'links', label: 'Связи', icon: Users },
+  { key: 'links', label: 'Общие', icon: Users },
   { key: 'ideas', label: 'Идеи', icon: Lightbulb },
-];
-
-const taskFilters: Array<{ key: TaskFilter; label: string }> = [
-  { key: 'all', label: 'Все' },
-  { key: 'today', label: 'Сегодня' },
-  { key: 'personal', label: 'Личные' },
-  { key: 'shared', label: 'Совместные' },
-  { key: 'focus', label: 'Важное' },
 ];
 
 const dateShortcuts = [
@@ -134,7 +133,6 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>(seedTasks);
   const [ideas, setIdeas] = useState<Idea[]>(seedIdeas);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<TaskFilter>('all');
   const [selectedTaskId, setSelectedTaskId] = useState(seedTasks[0].id);
   const [taskEditor, setTaskEditor] = useState<{
     visible: boolean;
@@ -144,6 +142,7 @@ export default function App() {
   }>({ visible: false });
   const [ideaEditorVisible, setIdeaEditorVisible] = useState(false);
   const [createMenuVisible, setCreateMenuVisible] = useState(false);
+  const [allSearchVisible, setAllSearchVisible] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [localOnly, setLocalOnly] = useState(false);
@@ -304,17 +303,16 @@ export default function App() {
     const trimmed = query.trim().toLowerCase();
     return activeTasks.filter((task) => {
       const matchesQuery = !trimmed || task.title.toLowerCase().includes(trimmed);
-      const matchesFilter =
-        filter === 'all' ||
-        (filter === 'today' && task.date === TODAY) ||
-        (filter === 'personal' && !task.linkedUser) ||
-        (filter === 'shared' && Boolean(task.linkedUser)) ||
-        (filter === 'focus' && (task.focus || task.important));
-      return matchesQuery && matchesFilter;
+      return matchesQuery;
     });
-  }, [activeTasks, filter, query]);
+  }, [activeTasks, query]);
 
-  const linkedTasks = activeTasks.filter((task) => Boolean(task.linkedUser));
+  const filteredCompletedTasks = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    return completedTasks.filter((task) => !trimmed || task.title.toLowerCase().includes(trimmed));
+  }, [completedTasks, query]);
+
+  const linkedTasks = tasks.filter((task) => Boolean(task.linkedUser));
 
   const refreshFromApi = (session: AuthState) => {
     setSyncStatus('Синхронизация');
@@ -546,7 +544,15 @@ export default function App() {
   const makeTaskShared = (taskId: string) => {
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
-    patchTask(taskId, { linkedUser: task.linkedUser ?? 'Анна', seen: true });
+    patchTask(taskId, {
+      linkedUser: task.linkedUser || 'Анна',
+      assignee: task.assignee || task.linkedUser || 'Анна',
+      seen: true,
+    });
+  };
+
+  const markTaskImportant = (taskId: string) => {
+    patchTask(taskId, { important: true });
   };
 
   const moveTaskToIdea = (taskId: string) => {
@@ -691,7 +697,17 @@ export default function App() {
               unreadCount={unreadCount}
               sessionLabel={displayedSyncStatus}
               pwaAction={pwaAction}
-              onTimeline={() => setView('timeline')}
+              tool={view === 'day' ? 'timeline' : view === 'all' ? 'search' : undefined}
+              toolActive={view === 'all' && (allSearchVisible || Boolean(query.trim()))}
+              onToolPress={() => {
+                if (view === 'day') {
+                  setView('timeline');
+                  return;
+                }
+                if (view === 'all') {
+                  setAllSearchVisible((current) => !current);
+                }
+              }}
               onCreate={() => setCreateMenuVisible(true)}
               onLogout={auth ? handleLogout : undefined}
             />
@@ -715,23 +731,28 @@ export default function App() {
               )}
               {view === 'all' && (
                 <AllTasksScreen
-                  filter={filter}
-                  onFilterChange={setFilter}
                   query={query}
                   onQueryChange={setQuery}
+                  searchVisible={allSearchVisible}
                   tasks={filteredTasks}
-                  completedTasks={completedTasks}
-                  onCreate={() => setTaskEditor({ visible: true })}
-                  onTaskPress={openTask}
+                  completedTasks={filteredCompletedTasks}
+                  onTaskPress={markTaskSeen}
                   onToggle={toggleTask}
+                  onMakeImportant={markTaskImportant}
+                  onMakeShared={makeTaskShared}
+                  onMoveToIdea={moveTaskToIdea}
+                  onDelete={deleteTask}
                 />
               )}
               {view === 'links' && (
                 <LinksScreen
                   tasks={linkedTasks}
-                  onCreate={() => setTaskEditor({ visible: true })}
-                  onTaskPress={openTask}
+                  onCreateShared={(draft) => saveTask(draft)}
+                  onTaskPress={markTaskSeen}
                   onToggle={toggleTask}
+                  onMakeImportant={markTaskImportant}
+                  onMoveToIdea={moveTaskToIdea}
+                  onDelete={deleteTask}
                 />
               )}
               {view === 'ideas' && (
@@ -778,7 +799,7 @@ export default function App() {
                 setCreateMenuVisible(false);
                 setTaskEditor({
                   visible: true,
-                  initialDraft: { linkedUser: 'Анна' },
+                  initialDraft: { linkedUser: 'Анна', assignee: 'Анна' },
                 });
               },
             },
@@ -1023,7 +1044,7 @@ function AuthScreen({
 
 function getHeaderTitle(view: ViewMode, taskCount: number) {
   if (view === 'day') return 'Сегодня';
-  if (view === 'links') return 'Связи';
+  if (view === 'links') return 'Общие';
   if (view === 'ideas') return 'Идеи';
   return `Все задачи (${taskCount})`;
 }
@@ -1035,7 +1056,9 @@ function Header({
   unreadCount,
   sessionLabel,
   pwaAction,
-  onTimeline,
+  tool,
+  toolActive,
+  onToolPress,
   onCreate,
   onLogout,
 }: {
@@ -1045,10 +1068,14 @@ function Header({
   unreadCount: number;
   sessionLabel: string;
   pwaAction?: PwaAction;
-  onTimeline: () => void;
+  tool?: HeaderTool;
+  toolActive?: boolean;
+  onToolPress?: () => void;
   onCreate: () => void;
   onLogout?: () => void;
 }) {
+  const ToolIcon = tool === 'timeline' ? Clock3 : tool === 'search' ? Search : null;
+
   return (
     <View style={styles.header}>
       <View style={styles.statusSpacer} />
@@ -1090,9 +1117,18 @@ function Header({
             </Pressable>
           ) : null}
         </View>
-        <Pressable onPress={onTimeline} style={styles.headerToolButton}>
-          <Clock3 size={26} color="#686868" strokeWidth={1.7} />
-        </Pressable>
+        {ToolIcon && onToolPress ? (
+          <Pressable
+            onPress={onToolPress}
+            style={[styles.headerToolButton, toolActive && styles.headerToolButtonActive]}
+          >
+            <ToolIcon
+              size={26}
+              color={toolActive ? colors.text : '#686868'}
+              strokeWidth={1.7}
+            />
+          </Pressable>
+        ) : null}
       </View>
       <PwaActionBar action={pwaAction} />
     </View>
@@ -1229,6 +1265,87 @@ function ActionMenuModal({
   );
 }
 
+function TaskContextMenuOverlay({
+  task,
+  items,
+  onClose,
+  anchorY,
+  hideFocusBadge,
+  hideImportantBadge,
+  highlightImportant,
+  hideAccent,
+  showLinkDetails = true,
+}: {
+  task: Task | null;
+  items: ActionMenuItem[];
+  onClose: () => void;
+  anchorY?: number;
+  hideFocusBadge?: boolean;
+  hideImportantBadge?: boolean;
+  highlightImportant?: boolean;
+  hideAccent?: boolean;
+  showLinkDetails?: boolean;
+}) {
+  if (!task) return null;
+  const paneOffset =
+    typeof anchorY === 'number'
+      ? Math.max(86, Math.min(anchorY - 68, 390))
+      : Platform.OS === 'ios'
+        ? 132
+        : 144;
+
+  return (
+    <Modal visible animationType="fade" transparent onRequestClose={onClose}>
+      <Pressable onPress={onClose} style={styles.taskContextBackdrop}>
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
+          style={[styles.taskContextPane, { marginTop: paneOffset }]}
+        >
+          <TaskCard
+            task={task}
+            hideFocusBadge={hideFocusBadge}
+            hideImportantBadge={hideImportantBadge}
+            highlightImportant={highlightImportant}
+            hideAccent={hideAccent}
+            showLinkDetails={showLinkDetails}
+            onPress={() => undefined}
+            onToggle={() => undefined}
+          />
+          <View style={styles.taskContextMenu}>
+            {items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Pressable key={item.label} onPress={item.onPress} style={styles.contextMenuItem}>
+                  <View
+                    style={[
+                      styles.menuIconWrap,
+                      item.destructive && styles.menuIconWrapDanger,
+                    ]}
+                  >
+                    <Icon
+                      size={20}
+                      color={item.destructive ? colors.red : colors.text}
+                      strokeWidth={2}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.menuItemText,
+                      item.destructive && styles.menuItemTextDanger,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function DayScreen({
   tasks,
   focusTasks,
@@ -1261,6 +1378,7 @@ function DayScreen({
   });
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [menuTask, setMenuTask] = useState<Task | null>(null);
+  const [menuAnchorY, setMenuAnchorY] = useState<number | undefined>(undefined);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const dragStateRef = useRef<{
     taskId: string;
@@ -1378,7 +1496,10 @@ function DayScreen({
             hideFocusBadge
             dragAttributesForTask={dragAttributesForTask}
             onTaskPress={toggleTaskExpansion}
-            onTaskLongPress={(task) => setMenuTask(task)}
+            onTaskLongPress={(task, event) => {
+              setMenuTask(task);
+              setMenuAnchorY(event?.nativeEvent?.pageY);
+            }}
             onToggle={onToggle}
           />
         ) : null}
@@ -1463,43 +1584,135 @@ function DayScreen({
 }
 
 function AllTasksScreen({
-  filter,
-  onFilterChange,
   query,
   onQueryChange,
+  searchVisible,
   tasks,
   completedTasks,
-  onCreate,
   onTaskPress,
   onToggle,
+  onMakeImportant,
+  onMakeShared,
+  onMoveToIdea,
+  onDelete,
 }: {
-  filter: TaskFilter;
-  onFilterChange: (filter: TaskFilter) => void;
   query: string;
   onQueryChange: (query: string) => void;
+  searchVisible: boolean;
   tasks: Task[];
   completedTasks: Task[];
-  onCreate: () => void;
   onTaskPress: (taskId: string) => void;
   onToggle: (taskId: string) => void;
+  onMakeImportant: (taskId: string) => void;
+  onMakeShared: (taskId: string) => void;
+  onMoveToIdea: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
 }) {
+  const [completedExpanded, setCompletedExpanded] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [menuTask, setMenuTask] = useState<Task | null>(null);
+  const [menuAnchorY, setMenuAnchorY] = useState<number | undefined>(undefined);
+
+  const toggleTaskExpansion = (taskId: string) => {
+    onTaskPress(taskId);
+    setExpandedTaskId((current) => (current === taskId ? null : taskId));
+  };
+
   return (
     <View>
-      <FilterTabs value={filter} onChange={onFilterChange} items={taskFilters} />
-      <AddInput placeholder="+ Добавить задачу" onPress={onCreate} />
-      <SearchInput value={query} onChange={onQueryChange} />
+      {searchVisible || query ? (
+        <CompactSearchInput value={query} onChange={onQueryChange} />
+      ) : null}
       <TaskStack
         tasks={tasks}
         empty="Ничего не найдено"
-        onTaskPress={onTaskPress}
+        expandedTaskId={expandedTaskId}
+        hideFocusBadge
+        hideImportantBadge
+        highlightImportant
+        hideAccent
+        showLinkDetails={false}
+        onTaskPress={toggleTaskExpansion}
+        onTaskLongPress={(task, event) => {
+          setMenuTask(task);
+          setMenuAnchorY(event?.nativeEvent?.pageY);
+        }}
         onToggle={onToggle}
       />
-      <SectionTitle title={`Выполненные (${completedTasks.length})`} />
-      <TaskStack
-        tasks={completedTasks.slice(0, 3)}
-        empty="Пока нет выполненных задач"
-        onTaskPress={onTaskPress}
-        onToggle={onToggle}
+      <SectionTitle
+        title={`Выполненные задачи (${completedTasks.length})`}
+        collapsible
+        expanded={completedExpanded}
+        onPress={() => setCompletedExpanded((current) => !current)}
+      />
+      {completedExpanded ? (
+        <TaskStack
+          tasks={completedTasks}
+          empty="Пока нет выполненных задач"
+          expandedTaskId={expandedTaskId}
+          hideFocusBadge
+          hideImportantBadge
+          highlightImportant
+          hideAccent
+          showLinkDetails={false}
+          rightActionForTask={(task) => ({
+            icon: Trash2,
+            label: 'Удалить',
+            destructive: true,
+            onPress: () => onDelete(task.id),
+          })}
+          onTaskPress={toggleTaskExpansion}
+          onTaskLongPress={(task, event) => {
+            setMenuTask(task);
+            setMenuAnchorY(event?.nativeEvent?.pageY);
+          }}
+          onToggle={onToggle}
+        />
+      ) : null}
+      <TaskContextMenuOverlay
+        task={menuTask}
+        onClose={() => setMenuTask(null)}
+        anchorY={menuAnchorY}
+        hideFocusBadge
+        hideImportantBadge
+        highlightImportant
+        hideAccent
+        showLinkDetails={false}
+        items={[
+          {
+            label: 'Отметить как важное',
+            icon: Star,
+            onPress: () => {
+              if (menuTask) onMakeImportant(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Сделать общей',
+            icon: Users,
+            onPress: () => {
+              if (menuTask) onMakeShared(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Перенести в идеи',
+            icon: Lightbulb,
+            onPress: () => {
+              if (menuTask) onMoveToIdea(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Удалить',
+            icon: Trash2,
+            destructive: true,
+            onPress: () => {
+              if (menuTask) onDelete(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+        ]}
       />
     </View>
   );
@@ -1507,38 +1720,260 @@ function AllTasksScreen({
 
 function LinksScreen({
   tasks,
-  onCreate,
+  onCreateShared,
   onTaskPress,
   onToggle,
+  onMakeImportant,
+  onMoveToIdea,
+  onDelete,
 }: {
   tasks: Task[];
-  onCreate: () => void;
+  onCreateShared: (draft: TaskDraft) => void;
   onTaskPress: (taskId: string) => void;
   onToggle: (taskId: string) => void;
+  onMakeImportant: (taskId: string) => void;
+  onMoveToIdea: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
 }) {
-  const unseenTasks = tasks.filter((task) => !task.seen);
-  const seenTasks = tasks.filter((task) => task.seen);
+  const [tab, setTab] = useState<SharedTabKey>('others');
+  const [formVisible, setFormVisible] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    accept: true,
+    new: true,
+    waiting: true,
+    overdue: true,
+    progress: true,
+    completed: false,
+  });
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [menuTask, setMenuTask] = useState<Task | null>(null);
+  const [menuAnchorY, setMenuAnchorY] = useState<number | undefined>(undefined);
+
+  const othersTasks = tasks.filter(isTaskAssignedToOther);
+  const mineTasks = tasks.filter((task) => !isTaskAssignedToOther(task));
+  const visibleTasks = tab === 'others' ? othersTasks : mineTasks;
+  const completed = visibleTasks.filter((task) => task.status === 'completed');
+  const active = visibleTasks.filter((task) => task.status === 'active');
+  const overdue = active.filter((task) => isOverdue(task));
+  const inProgress = active.filter((task) => task.seen && !isOverdue(task));
+  const newTasks = active.filter((task) => !task.seen && !task.important);
+  const waitingTasks = active.filter((task) => !task.seen && task.important);
+  const acceptTasks = completed.filter((task) => !task.seen);
+  const completedReady = completed.filter((task) => task.seen);
+
+  const toggleSection = (key: string) => {
+    setExpandedSections((current) => ({ ...current, [key]: !current[key] }));
+  };
+  const toggleTaskExpansion = (taskId: string) => {
+    onTaskPress(taskId);
+    setExpandedTaskId((current) => (current === taskId ? null : taskId));
+  };
+
+  const renderSection = (key: string, title: string, sectionTasks: Task[], collapsed = false) => {
+    const expanded = expandedSections[key] ?? !collapsed;
+    return (
+      <>
+        <SectionTitle
+          title={`${title} (${sectionTasks.length})`}
+          collapsible
+          expanded={expanded}
+          onPress={() => toggleSection(key)}
+        />
+        {expanded ? (
+          <TaskStack
+            tasks={sectionTasks}
+            empty="Задач нет"
+            expandedTaskId={expandedTaskId}
+            hideFocusBadge
+            highlightImportant
+            onTaskPress={toggleTaskExpansion}
+            onTaskLongPress={(task, event) => {
+              setMenuTask(task);
+              setMenuAnchorY(event?.nativeEvent?.pageY);
+            }}
+            onToggle={onToggle}
+          />
+        ) : null}
+      </>
+    );
+  };
 
   return (
     <View>
-      <View style={styles.linkSummary}>
-        <Text style={styles.summaryNumber}>{tasks.length}</Text>
-        <Text style={styles.summaryText}>совместных задач с тестовыми пользователями</Text>
-      </View>
-      <AddInput placeholder="+ Добавить совместную задачу" onPress={onCreate} />
-      {unseenTasks.length > 0 ? (
-        <>
-          <SectionTitle title={`Новые задачи (${unseenTasks.length})`} collapsible />
-          <TaskStack tasks={unseenTasks} onTaskPress={onTaskPress} onToggle={onToggle} />
-        </>
-      ) : null}
-      <SectionTitle title="В работе" collapsible />
-      <TaskStack
-        tasks={seenTasks}
-        empty="Совместных задач пока нет"
-        onTaskPress={onTaskPress}
-        onToggle={onToggle}
+      <SegmentedTabs
+        value={tab}
+        items={[
+          { key: 'others', label: 'Чужие задачи' },
+          { key: 'mine', label: 'Мои задачи' },
+        ]}
+        onChange={setTab}
       />
+      <AddInput
+        placeholder="+ Добавить задачу"
+        onPress={() => setFormVisible((current) => !current)}
+      />
+      {formVisible ? (
+        <InlineSharedTaskForm
+          tab={tab}
+          onCancel={() => setFormVisible(false)}
+          onSave={(draft) => {
+            onCreateShared(draft);
+            setFormVisible(false);
+          }}
+        />
+      ) : null}
+      {tab === 'others' ? (
+        <>
+          {renderSection('accept', 'Принять задачи', acceptTasks)}
+          {renderSection('overdue', 'Требует внимания', overdue)}
+          {renderSection('progress', 'В процессе', inProgress)}
+          {renderSection('completed', 'Выполненные', completedReady, true)}
+        </>
+      ) : (
+        <>
+          {renderSection('new', 'Новые задачи', newTasks)}
+          {renderSection('waiting', 'Ждут принятия', waitingTasks)}
+          {renderSection('overdue', 'Требует внимания', overdue)}
+          {renderSection('progress', 'В процессе', inProgress)}
+          {renderSection('completed', 'Выполненные', completedReady, true)}
+        </>
+      )}
+      <TaskContextMenuOverlay
+        task={menuTask}
+        onClose={() => setMenuTask(null)}
+        anchorY={menuAnchorY}
+        hideFocusBadge
+        highlightImportant
+        items={[
+          {
+            label: 'Отметить как важное',
+            icon: Star,
+            onPress: () => {
+              if (menuTask) onMakeImportant(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Перенести в идеи',
+            icon: Lightbulb,
+            onPress: () => {
+              if (menuTask) onMoveToIdea(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Удалить',
+            icon: Trash2,
+            destructive: true,
+            onPress: () => {
+              if (menuTask) onDelete(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
+function SegmentedTabs({
+  value,
+  items,
+  onChange,
+}: {
+  value: SharedTabKey;
+  items: Array<{ key: SharedTabKey; label: string }>;
+  onChange: (value: SharedTabKey) => void;
+}) {
+  return (
+    <View style={styles.segmentedTabs}>
+      {items.map((item) => {
+        const active = item.key === value;
+        return (
+          <Pressable
+            key={item.key}
+            onPress={() => onChange(item.key)}
+            style={[styles.segmentedTab, active && styles.segmentedTabActive]}
+          >
+            <Text style={[styles.segmentedTabText, active && styles.segmentedTabTextActive]}>
+              {item.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function InlineSharedTaskForm({
+  tab,
+  onCancel,
+  onSave,
+}: {
+  tab: SharedTabKey;
+  onCancel: () => void;
+  onSave: (draft: TaskDraft) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [linkedUser, setLinkedUser] = useState('Анна');
+  const [date, setDate] = useState(TODAY);
+
+  const submit = () => {
+    const trimmed = title.trim();
+    const user = linkedUser.trim() || 'Анна';
+    if (!trimmed) {
+      Alert.alert('Общая задача', 'Добавь название задачи.');
+      return;
+    }
+    onSave({
+      title: trimmed,
+      description: '',
+      date: date.trim() || TODAY,
+      time: '',
+      durationMinutes: '',
+      assignee: tab === 'others' ? user : 'Я',
+      linkedUser: user,
+      focus: false,
+      important: false,
+    });
+    setTitle('');
+  };
+
+  return (
+    <View style={styles.inlineForm}>
+      <TextInput
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Название задачи"
+        placeholderTextColor={colors.muted}
+        style={styles.inlineFormInput}
+      />
+      <View style={styles.inlineFormRow}>
+        <TextInput
+          value={linkedUser}
+          onChangeText={setLinkedUser}
+          placeholder="С кем связана"
+          placeholderTextColor={colors.muted}
+          style={[styles.inlineFormInput, styles.inlineFormHalf]}
+        />
+        <TextInput
+          value={date}
+          onChangeText={setDate}
+          placeholder={TODAY}
+          placeholderTextColor={colors.muted}
+          style={[styles.inlineFormInput, styles.inlineFormHalf]}
+        />
+      </View>
+      <View style={styles.inlineFormActions}>
+        <Pressable onPress={onCancel} style={styles.inlineFormButton}>
+          <Text style={styles.inlineFormButtonText}>Отмена</Text>
+        </Pressable>
+        <Pressable onPress={submit} style={[styles.inlineFormButton, styles.inlineFormButtonPrimary]}>
+          <Text style={[styles.inlineFormButtonText, styles.inlineFormButtonTextPrimary]}>
+            Создать
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -2019,40 +2454,31 @@ function DateShortcutRow({
   );
 }
 
-function FilterTabs({
+function CompactSearchInput({
   value,
-  items,
   onChange,
 }: {
-  value: TaskFilter;
-  items: Array<{ key: TaskFilter; label: string }>;
-  onChange: (value: TaskFilter) => void;
+  value: string;
+  onChange: (value: string) => void;
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterTabs}>
-      {items.map((item) => (
-        <Pressable key={item.key} onPress={() => onChange(item.key)} style={styles.filterChip}>
-          <Text style={[styles.filterText, item.key === value && styles.filterTextActive]}>
-            {item.label}
-          </Text>
-        </Pressable>
-      ))}
-    </ScrollView>
-  );
-}
-
-function SearchInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <View style={styles.searchBox}>
-      <Search size={23} color={colors.muted} strokeWidth={1.8} />
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        placeholder="Поиск"
-        placeholderTextColor={colors.muted}
-        style={styles.searchInput}
-        returnKeyType="search"
-      />
+    <View style={styles.compactSearchRow}>
+      <View style={styles.compactSearchBox}>
+        <Search size={20} color={colors.muted} strokeWidth={1.8} />
+        <TextInput
+          value={value}
+          onChangeText={onChange}
+          placeholder="Поиск"
+          placeholderTextColor={colors.muted}
+          style={styles.compactSearchInput}
+          returnKeyType="search"
+        />
+        {value ? (
+          <Pressable onPress={() => onChange('')} style={styles.compactSearchClear}>
+            <X size={16} color={colors.muted} strokeWidth={2} />
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -2108,6 +2534,11 @@ function TaskStack({
   expandedTaskId,
   draggingTaskId,
   hideFocusBadge,
+  hideImportantBadge,
+  highlightImportant,
+  hideAccent,
+  showLinkDetails = true,
+  rightActionForTask,
   dragAttributesForTask,
   onTaskPress,
   onTaskLongPress,
@@ -2119,9 +2550,14 @@ function TaskStack({
   expandedTaskId?: string | null;
   draggingTaskId?: string | null;
   hideFocusBadge?: boolean;
+  hideImportantBadge?: boolean;
+  highlightImportant?: boolean;
+  hideAccent?: boolean;
+  showLinkDetails?: boolean;
+  rightActionForTask?: (task: Task) => CardAction | undefined;
   dragAttributesForTask?: (task: Task, list: DayTaskListKey) => Record<string, unknown> | undefined;
   onTaskPress: (taskId: string) => void;
-  onTaskLongPress?: (task: Task) => void;
+  onTaskLongPress?: (task: Task, event?: any) => void;
   onToggle: (taskId: string) => void;
 }) {
   if (!tasks.length) {
@@ -2141,11 +2577,16 @@ function TaskStack({
           expanded={expandedTaskId === task.id}
           dragging={draggingTaskId === task.id}
           hideFocusBadge={hideFocusBadge}
+          hideImportantBadge={hideImportantBadge}
+          highlightImportant={highlightImportant}
+          hideAccent={hideAccent}
+          showLinkDetails={showLinkDetails}
+          rightAction={rightActionForTask?.(task)}
           dragAttributes={
             listKey && dragAttributesForTask ? dragAttributesForTask(task, listKey) : undefined
           }
           onPress={() => onTaskPress(task.id)}
-          onLongPress={onTaskLongPress ? () => onTaskLongPress(task) : undefined}
+          onLongPress={onTaskLongPress ? (event) => onTaskLongPress(task, event) : undefined}
           onToggle={() => onToggle(task.id)}
         />
       ))}
@@ -2158,6 +2599,11 @@ function TaskCard({
   expanded,
   dragging,
   hideFocusBadge,
+  hideImportantBadge,
+  highlightImportant,
+  hideAccent,
+  showLinkDetails = true,
+  rightAction,
   dragAttributes,
   onPress,
   onLongPress,
@@ -2167,12 +2613,18 @@ function TaskCard({
   expanded?: boolean;
   dragging?: boolean;
   hideFocusBadge?: boolean;
+  hideImportantBadge?: boolean;
+  highlightImportant?: boolean;
+  hideAccent?: boolean;
+  showLinkDetails?: boolean;
+  rightAction?: CardAction;
   dragAttributes?: Record<string, unknown>;
   onPress: () => void;
-  onLongPress?: () => void;
+  onLongPress?: (event: any) => void;
   onToggle: () => void;
 }) {
-  const accent = getAccent(task);
+  const accent = hideAccent ? 'transparent' : getAccent(task);
+  const RightIcon = rightAction?.icon;
 
   return (
     <Pressable
@@ -2182,6 +2634,7 @@ function TaskCard({
       delayLongPress={360}
       style={[
         styles.taskCard,
+        highlightImportant && task.important && styles.taskCardImportant,
         expanded && styles.taskCardExpanded,
         dragging && styles.taskCardDragging,
       ]}
@@ -2199,7 +2652,9 @@ function TaskCard({
               </View>
             ) : null}
             {task.focus && !hideFocusBadge ? <Text style={styles.badgeText}>Фокус</Text> : null}
-            {task.important ? <Text style={styles.badgeText}>Важное</Text> : null}
+            {task.important && !hideImportantBadge ? (
+              <Text style={styles.badgeText}>Важное</Text>
+            ) : null}
           </View>
           <Text
             style={[styles.taskTitle, task.status === 'completed' && styles.taskTitleCompleted]}
@@ -2208,21 +2663,49 @@ function TaskCard({
             {task.title}
           </Text>
         </View>
-        <View style={styles.taskMeta}>
-          <Text style={styles.taskMetaText}>{formatDate(task.date)}</Text>
-          {task.time ? <Text style={styles.taskMetaText}>до {task.time}</Text> : null}
-          {task.durationMinutes ? (
-            <Text style={styles.taskMetaText}>{formatDuration(task.durationMinutes)}</Text>
-          ) : null}
-        </View>
+        {rightAction ? (
+          <Pressable
+            onPress={(event) => {
+              event.stopPropagation?.();
+              rightAction.onPress();
+            }}
+            style={[
+              styles.taskIconAction,
+              rightAction.destructive && styles.taskIconActionDanger,
+            ]}
+            accessibilityLabel={rightAction.label}
+          >
+            {RightIcon ? (
+              <RightIcon
+                size={20}
+                color={rightAction.destructive ? colors.red : colors.text}
+                strokeWidth={2}
+              />
+            ) : null}
+          </Pressable>
+        ) : (
+          <View style={styles.taskMeta}>
+            <Text style={styles.taskMetaText}>{formatDate(task.date)}</Text>
+            {task.time ? <Text style={styles.taskMetaText}>до {task.time}</Text> : null}
+            {task.durationMinutes ? (
+              <Text style={styles.taskMetaText}>{formatDuration(task.durationMinutes)}</Text>
+            ) : null}
+          </View>
+        )}
       </View>
-      {expanded ? <TaskInlineDetails task={task} /> : null}
+      {expanded ? <TaskInlineDetails task={task} showLinkDetails={showLinkDetails} /> : null}
       <View style={[styles.accentRail, { backgroundColor: accent }]} />
     </Pressable>
   );
 }
 
-function TaskInlineDetails({ task }: { task: Task }) {
+function TaskInlineDetails({
+  task,
+  showLinkDetails = true,
+}: {
+  task: Task;
+  showLinkDetails?: boolean;
+}) {
   return (
     <View style={styles.taskInlineDetails}>
       <Text style={styles.taskInlineDescription}>
@@ -2233,12 +2716,14 @@ function TaskInlineDetails({ task }: { task: Task }) {
           <Text style={styles.taskInlineMetaLabel}>Результат</Text>
           <Text style={styles.taskInlineMetaValue}>Задача закрыта без лишних уточнений</Text>
         </View>
-        <View style={styles.taskInlineMetaItem}>
-          <Text style={styles.taskInlineMetaLabel}>Связь</Text>
-          <Text style={styles.taskInlineMetaValue}>
-            {task.linkedUser ? task.linkedUser : 'Личная задача'}
-          </Text>
-        </View>
+        {showLinkDetails ? (
+          <View style={styles.taskInlineMetaItem}>
+            <Text style={styles.taskInlineMetaLabel}>Связь</Text>
+            <Text style={styles.taskInlineMetaValue}>
+              {task.linkedUser ? task.linkedUser : 'Без связанного пользователя'}
+            </Text>
+          </View>
+        ) : null}
       </View>
       {task.comments.length > 0 ? (
         <Text style={styles.taskInlineComments}>Комментарии: {task.comments.length}</Text>
@@ -2320,6 +2805,14 @@ function orderDayTasks(items: Task[]) {
   const focusItems = items.filter((task) => task.focus);
   const regularItems = sortTasks(items.filter((task) => !task.focus));
   return [...focusItems, ...regularItems];
+}
+
+function isTaskAssignedToOther(task: Task) {
+  return Boolean(task.linkedUser && task.assignee && task.assignee === task.linkedUser);
+}
+
+function isOverdue(task: Task) {
+  return task.status === 'active' && task.date < TODAY;
 }
 
 function reorderTaskForDay(
@@ -2613,6 +3106,10 @@ const styles = StyleSheet.create({
     height: 42,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 8,
+  },
+  headerToolButtonActive: {
+    backgroundColor: '#ffffff',
   },
   pwaActionBar: {
     minHeight: 38,
@@ -2663,23 +3160,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 128,
   },
-  filterTabs: {
-    gap: 22,
-    paddingVertical: 8,
-    paddingRight: 12,
-  },
-  filterChip: {
-    height: 36,
-    justifyContent: 'center',
-  },
-  filterText: {
-    color: colors.muted,
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  filterTextActive: {
-    color: colors.text,
-  },
   addInput: {
     height: 38,
     marginTop: 18,
@@ -2701,22 +3181,34 @@ const styles = StyleSheet.create({
     fontSize: 19,
     lineHeight: 24,
   },
-  searchBox: {
+  compactSearchRow: {
+    minHeight: 42,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  compactSearchBox: {
+    width: 218,
     height: 38,
-    marginBottom: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 6,
+    gap: 7,
+    borderRadius: 8,
     backgroundColor: colors.card,
   },
-  searchInput: {
+  compactSearchInput: {
     flex: 1,
     minWidth: 0,
     color: colors.text,
-    fontSize: 17,
+    fontSize: 16,
     paddingVertical: 0,
+  },
+  compactSearchClear: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionTitleRow: {
     minHeight: 34,
@@ -2752,6 +3244,9 @@ const styles = StyleSheet.create({
   },
   taskCardExpanded: {
     minHeight: 164,
+  },
+  taskCardImportant: {
+    backgroundColor: '#fff6d8',
   },
   taskCardDragging: {
     opacity: 0.72,
@@ -2820,6 +3315,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
     textAlign: 'right',
+  },
+  taskIconAction: {
+    width: 42,
+    height: 42,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#f3f3f3',
+  },
+  taskIconActionDanger: {
+    backgroundColor: '#fff0f1',
   },
   taskInlineDetails: {
     marginTop: 10,
@@ -2893,6 +3400,81 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 24,
     textAlign: 'center',
+  },
+  segmentedTabs: {
+    height: 42,
+    marginTop: 8,
+    padding: 4,
+    flexDirection: 'row',
+    borderRadius: 8,
+    backgroundColor: '#e9e9e9',
+  },
+  segmentedTab: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+  },
+  segmentedTabActive: {
+    backgroundColor: '#ffffff',
+  },
+  segmentedTabText: {
+    color: '#777777',
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  segmentedTabTextActive: {
+    color: colors.text,
+  },
+  inlineForm: {
+    marginBottom: 10,
+    padding: 12,
+    gap: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  inlineFormRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  inlineFormHalf: {
+    flex: 1,
+    minWidth: 0,
+  },
+  inlineFormInput: {
+    minHeight: 40,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    color: colors.text,
+    backgroundColor: '#f4f4f4',
+    fontSize: 16,
+  },
+  inlineFormActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  inlineFormButton: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#f3f3f3',
+  },
+  inlineFormButtonPrimary: {
+    backgroundColor: '#000000',
+  },
+  inlineFormButtonText: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  inlineFormButtonTextPrimary: {
+    color: '#ffffff',
   },
   linkSummary: {
     marginTop: 18,
@@ -3250,6 +3832,34 @@ const styles = StyleSheet.create({
   },
   menuItemTextDanger: {
     color: colors.red,
+  },
+  taskContextBackdrop: {
+    flex: 1,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  taskContextPane: {
+    gap: 8,
+  },
+  taskContextMenu: {
+    padding: 8,
+    gap: 6,
+    borderRadius: 8,
+    backgroundColor: colors.bg,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  contextMenuItem: {
+    minHeight: 46,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
   },
   editorSheet: {
     maxHeight: '92%',
