@@ -56,6 +56,12 @@ export type PendingMutation =
     }
   | {
       id: string;
+      type: 'deleteTask';
+      taskId: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
       type: 'setTaskStatus';
       taskId: string;
       status: TaskStatus;

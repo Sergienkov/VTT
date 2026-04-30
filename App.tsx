@@ -17,6 +17,7 @@ import {
   Send,
   Star,
   Sun,
+  Trash2,
   Users,
   X,
 } from 'lucide-react-native';
@@ -39,6 +40,7 @@ import {
   createRemoteIdea,
   createRemoteTask,
   convertRemoteIdea,
+  deleteRemoteTask,
   loadRemoteState,
   logoutRemote,
   markRemoteTaskSeen,
@@ -68,6 +70,7 @@ type ViewMode = TabKey | 'timeline' | 'detail';
 type TaskFilter = 'all' | 'today' | 'personal' | 'shared' | 'focus';
 type PendingMutationInput =
   | { type: 'createTask' | 'updateTask'; task: Task }
+  | { type: 'deleteTask'; taskId: string }
   | { type: 'setTaskStatus'; taskId: string; status: TaskStatus }
   | { type: 'markTaskSeen'; taskId: string }
   | { type: 'createComment'; taskId: string; body: string }
@@ -83,6 +86,13 @@ type PwaAction = {
   tone: 'install' | 'update';
   onPress: () => void;
 };
+type ActionMenuItem = {
+  label: string;
+  icon: typeof Plus;
+  destructive?: boolean;
+  onPress: () => void;
+};
+type DayTaskListKey = 'focus' | 'tasks' | 'completed';
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Sun }> = [
   { key: 'day', label: 'День', icon: Sun },
@@ -130,8 +140,10 @@ export default function App() {
     visible: boolean;
     taskId?: string;
     initialTitle?: string;
+    initialDraft?: Partial<TaskDraft>;
   }>({ visible: false });
   const [ideaEditorVisible, setIdeaEditorVisible] = useState(false);
+  const [createMenuVisible, setCreateMenuVisible] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [localOnly, setLocalOnly] = useState(false);
@@ -278,11 +290,15 @@ export default function App() {
   );
 
   const dayTasks = useMemo(
-    () => activeTasks.filter((task) => task.date === TODAY),
-    [activeTasks],
+    () => orderDayTasks(tasks.filter((task) => task.status === 'active' && task.date === TODAY)),
+    [tasks],
   );
 
-  const dayFocusTasks = dayTasks.filter((task) => task.focus || task.important);
+  const dayFocusTasks = dayTasks.filter((task) => task.focus);
+  const completedDayTasks = useMemo(
+    () => sortTasks(tasks.filter((task) => task.status === 'completed' && task.date === TODAY)),
+    [tasks],
+  );
 
   const filteredTasks = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -329,6 +345,28 @@ export default function App() {
     operation(auth)
       .then(() => setSyncStatus('API подключен'))
       .catch(() => enqueueMutation(mutation));
+  };
+
+  const persistTaskUpdate = (task: Task) => {
+    runQueuedRemoteMutation(
+      (session) => updateRemoteTask(session, task),
+      createPendingMutation({ type: 'updateTask', task }),
+    );
+  };
+
+  const patchTask = (
+    taskId: string,
+    patch: Partial<Task>,
+    order?: { list: DayTaskListKey; beforeTaskId?: string },
+  ) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    const nextTask = { ...task, ...patch, updatedAt: new Date().toISOString() };
+    setTasks((current) => {
+      const updated = current.map((item) => (item.id === taskId ? nextTask : item));
+      return order ? reorderTaskForDay(updated, taskId, order) : updated;
+    });
+    persistTaskUpdate(nextTask);
   };
 
   useEffect(() => {
@@ -400,7 +438,7 @@ export default function App() {
     setView(tab);
   };
 
-  const openTask = (taskId: string) => {
+  const markTaskSeen = (taskId: string) => {
     setSelectedTaskId(taskId);
     setTasks((current) =>
       current.map((task) => (task.id === taskId ? { ...task, seen: true } : task)),
@@ -409,6 +447,10 @@ export default function App() {
       (session) => markRemoteTaskSeen(session, taskId),
       createPendingMutation({ type: 'markTaskSeen', taskId }),
     );
+  };
+
+  const openTask = (taskId: string) => {
+    markTaskSeen(taskId);
     setView('detail');
   };
 
@@ -490,6 +532,49 @@ export default function App() {
     runQueuedRemoteMutation(
       (session) => createRemoteComment(session, taskId, trimmed),
       createPendingMutation({ type: 'createComment', taskId, body: trimmed }),
+    );
+  };
+
+  const setTaskFocus = (taskId: string, focus: boolean, beforeTaskId?: string) => {
+    patchTask(taskId, { focus }, { list: focus ? 'focus' : 'tasks', beforeTaskId });
+  };
+
+  const reorderFocusTask = (taskId: string, beforeTaskId?: string) => {
+    setTasks((current) => reorderTaskForDay(current, taskId, { list: 'focus', beforeTaskId }));
+  };
+
+  const makeTaskShared = (taskId: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    patchTask(taskId, { linkedUser: task.linkedUser ?? 'Анна', seen: true });
+  };
+
+  const moveTaskToIdea = (taskId: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    const idea: Idea = {
+      id: `idea-${Date.now()}`,
+      title: task.title,
+      description: task.description,
+      createdAt: new Date().toISOString(),
+    };
+    setIdeas((current) => [idea, ...current]);
+    setTasks((current) => current.filter((item) => item.id !== taskId));
+    runQueuedRemoteMutation(
+      (session) => createRemoteIdea(session, idea),
+      createPendingMutation({ type: 'createIdea', idea }),
+    );
+    runQueuedRemoteMutation(
+      (session) => deleteRemoteTask(session, taskId),
+      createPendingMutation({ type: 'deleteTask', taskId }),
+    );
+  };
+
+  const deleteTask = (taskId: string) => {
+    setTasks((current) => current.filter((task) => task.id !== taskId));
+    runQueuedRemoteMutation(
+      (session) => deleteRemoteTask(session, taskId),
+      createPendingMutation({ type: 'deleteTask', taskId }),
     );
   };
 
@@ -607,7 +692,7 @@ export default function App() {
               sessionLabel={displayedSyncStatus}
               pwaAction={pwaAction}
               onTimeline={() => setView('timeline')}
-              onCreate={() => setTaskEditor({ visible: true })}
+              onCreate={() => setCreateMenuVisible(true)}
               onLogout={auth ? handleLogout : undefined}
             />
             <ScrollView
@@ -618,10 +703,14 @@ export default function App() {
                 <DayScreen
                   tasks={dayTasks}
                   focusTasks={dayFocusTasks}
-                  completedCount={completedTasks.filter((task) => task.date === TODAY).length}
-                  onCreate={() => setTaskEditor({ visible: true })}
-                  onTaskPress={openTask}
+                  completedTasks={completedDayTasks}
+                  onTaskPress={markTaskSeen}
                   onToggle={toggleTask}
+                  onSetFocus={setTaskFocus}
+                  onReorderFocus={reorderFocusTask}
+                  onMakeShared={makeTaskShared}
+                  onMoveToIdea={moveTaskToIdea}
+                  onDelete={deleteTask}
                 />
               )}
               {view === 'all' && (
@@ -660,6 +749,7 @@ export default function App() {
           visible={taskEditor.visible}
           task={taskEditor.taskId ? tasks.find((task) => task.id === taskEditor.taskId) : undefined}
           initialTitle={taskEditor.initialTitle}
+          initialDraft={taskEditor.initialDraft}
           onClose={() => setTaskEditor({ visible: false })}
           onSave={saveTask}
         />
@@ -667,6 +757,40 @@ export default function App() {
           visible={ideaEditorVisible}
           onClose={() => setIdeaEditorVisible(false)}
           onSave={saveIdea}
+        />
+        <ActionMenuModal
+          visible={createMenuVisible}
+          title="Создать"
+          onClose={() => setCreateMenuVisible(false)}
+          items={[
+            {
+              label: 'Новая задача',
+              icon: CheckSquare,
+              onPress: () => {
+                setCreateMenuVisible(false);
+                setTaskEditor({ visible: true });
+              },
+            },
+            {
+              label: 'Общая задача',
+              icon: Users,
+              onPress: () => {
+                setCreateMenuVisible(false);
+                setTaskEditor({
+                  visible: true,
+                  initialDraft: { linkedUser: 'Анна' },
+                });
+              },
+            },
+            {
+              label: 'Добавить идею',
+              icon: Lightbulb,
+              onPress: () => {
+                setCreateMenuVisible(false);
+                setIdeaEditorVisible(true);
+              },
+            },
+          ]}
         />
         <PwaInstallHelpModal
           visible={pwaInstallHelpVisible}
@@ -707,6 +831,8 @@ function runPendingMutation(auth: AuthState, mutation: PendingMutation) {
       return createRemoteTask(auth, mutation.task);
     case 'updateTask':
       return updateRemoteTask(auth, mutation.task);
+    case 'deleteTask':
+      return deleteRemoteTask(auth, mutation.taskId);
     case 'setTaskStatus':
       return setRemoteTaskStatus(auth, mutation.taskId, mutation.status);
     case 'markTaskSeen':
@@ -1047,45 +1173,291 @@ function PwaInstallStep({ index, text }: { index: string; text: string }) {
   );
 }
 
+function ActionMenuModal({
+  visible,
+  title,
+  items,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  items: ActionMenuItem[];
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Pressable onPress={onClose} style={styles.menuBackdrop}>
+        <Pressable onPress={(event) => event.stopPropagation()} style={styles.menuSheet}>
+          <View style={styles.menuHeader}>
+            <Text numberOfLines={1} style={styles.menuTitle}>{title}</Text>
+            <Pressable onPress={onClose} style={styles.menuCloseButton}>
+              <X size={22} color={colors.text} strokeWidth={2} />
+            </Pressable>
+          </View>
+          <View style={styles.menuItems}>
+            {items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Pressable key={item.label} onPress={item.onPress} style={styles.menuItem}>
+                  <View
+                    style={[
+                      styles.menuIconWrap,
+                      item.destructive && styles.menuIconWrapDanger,
+                    ]}
+                  >
+                    <Icon
+                      size={20}
+                      color={item.destructive ? colors.red : colors.text}
+                      strokeWidth={2}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.menuItemText,
+                      item.destructive && styles.menuItemTextDanger,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function DayScreen({
   tasks,
   focusTasks,
-  completedCount,
-  onCreate,
+  completedTasks,
   onTaskPress,
   onToggle,
+  onSetFocus,
+  onReorderFocus,
+  onMakeShared,
+  onMoveToIdea,
+  onDelete,
 }: {
   tasks: Task[];
   focusTasks: Task[];
-  completedCount: number;
-  onCreate: () => void;
+  completedTasks: Task[];
   onTaskPress: (taskId: string) => void;
   onToggle: (taskId: string) => void;
+  onSetFocus: (taskId: string, focus: boolean, beforeTaskId?: string) => void;
+  onReorderFocus: (taskId: string, beforeTaskId?: string) => void;
+  onMakeShared: (taskId: string) => void;
+  onMoveToIdea: (taskId: string) => void;
+  onDelete: (taskId: string) => void;
 }) {
   const regularTasks = tasks.filter((task) => !focusTasks.some((item) => item.id === task.id));
   const plannedMinutes = tasks.reduce((sum, task) => sum + (task.durationMinutes ?? 0), 0);
+  const [expandedSections, setExpandedSections] = useState({
+    focus: true,
+    tasks: true,
+    completed: false,
+  });
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [menuTask, setMenuTask] = useState<Task | null>(null);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const dragStateRef = useRef<{
+    taskId: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+  } | null>(null);
+  const suppressNextPressRef = useRef(false);
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
+  };
+
+  const toggleTaskExpansion = (taskId: string) => {
+    if (suppressNextPressRef.current) {
+      suppressNextPressRef.current = false;
+      return;
+    }
+    onTaskPress(taskId);
+    setExpandedTaskId((current) => (current === taskId ? null : taskId));
+  };
+
+  const dropTask = (taskId: string, list: DayTaskListKey, beforeTaskId?: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task || list === 'completed') return;
+    if (list === 'focus') {
+      if (task.focus) {
+        onReorderFocus(taskId, beforeTaskId);
+      } else {
+        onSetFocus(taskId, true, beforeTaskId);
+      }
+      return;
+    }
+    if (task.focus) {
+      onSetFocus(taskId, false, beforeTaskId);
+    }
+  };
+
+  const dragAttributesForTask = (task: Task, list: DayTaskListKey) => {
+    if (Platform.OS !== 'web') return undefined;
+    return {
+      'data-task-id': task.id,
+      'data-list-key': list,
+      onPointerDown: (event: any) => {
+        dragStateRef.current = {
+          taskId: task.id,
+          startX: event.nativeEvent?.clientX ?? event.clientX ?? 0,
+          startY: event.nativeEvent?.clientY ?? event.clientY ?? 0,
+          active: false,
+        };
+      },
+      onPointerMove: (event: any) => {
+        const dragState = dragStateRef.current;
+        if (!dragState || dragState.taskId !== task.id) return;
+        const clientX = event.nativeEvent?.clientX ?? event.clientX ?? 0;
+        const clientY = event.nativeEvent?.clientY ?? event.clientY ?? 0;
+        const moved =
+          Math.abs(clientX - dragState.startX) > 10 ||
+          Math.abs(clientY - dragState.startY) > 10;
+        if (moved && !dragState.active) {
+          dragState.active = true;
+          suppressNextPressRef.current = true;
+          setDraggingTaskId(task.id);
+        }
+      },
+      onPointerUp: (event: any) => {
+        const dragState = dragStateRef.current;
+        dragStateRef.current = null;
+        setDraggingTaskId(null);
+        if (!dragState?.active || typeof document === 'undefined') return;
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        const clientX = event.nativeEvent?.clientX ?? event.clientX ?? 0;
+        const clientY = event.nativeEvent?.clientY ?? event.clientY ?? 0;
+        const target = document.elementFromPoint(clientX, clientY);
+        const dropTarget = target?.closest?.('[data-task-id], [data-task-drop-list]');
+        const targetTaskId = dropTarget?.getAttribute('data-task-id') ?? undefined;
+        const targetList =
+          (dropTarget?.getAttribute('data-list-key') ??
+            dropTarget?.getAttribute('data-task-drop-list')) as DayTaskListKey | null;
+        if (targetList) {
+          dropTask(dragState.taskId, targetList, targetTaskId);
+        }
+      },
+      onPointerCancel: () => {
+        dragStateRef.current = null;
+        setDraggingTaskId(null);
+      },
+    };
+  };
+
+  const dropAttributesForList = (list: DayTaskListKey) => {
+    if (Platform.OS !== 'web') return undefined;
+    return {
+      'data-task-drop-list': list,
+    };
+  };
 
   return (
     <View>
-      <AddInput placeholder="+ Добавить задачу" onPress={onCreate} />
-      <SectionTitle title="Фокус на" collapsible />
-      <TaskStack
-        tasks={focusTasks}
-        empty="Нет задач в фокусе"
-        onTaskPress={onTaskPress}
-        onToggle={onToggle}
+      <SectionTitle
+        title={`Фокус на (${focusTasks.length})`}
+        collapsible
+        expanded={expandedSections.focus}
+        onPress={() => toggleSection('focus')}
       />
-      <SectionTitle title={`Задачи дня (${regularTasks.length})`} collapsible />
-      <TaskStack
-        tasks={regularTasks}
-        empty="На сегодня задач нет"
-        onTaskPress={onTaskPress}
-        onToggle={onToggle}
+      <View {...(dropAttributesForList('focus') as object)}>
+        {expandedSections.focus ? (
+          <TaskStack
+            listKey="focus"
+            tasks={focusTasks}
+            empty="Нет задач в фокусе"
+            expandedTaskId={expandedTaskId}
+            draggingTaskId={draggingTaskId}
+            hideFocusBadge
+            dragAttributesForTask={dragAttributesForTask}
+            onTaskPress={toggleTaskExpansion}
+            onTaskLongPress={(task) => setMenuTask(task)}
+            onToggle={onToggle}
+          />
+        ) : null}
+      </View>
+      <SectionTitle
+        title={`Задачи (${regularTasks.length})`}
+        collapsible
+        expanded={expandedSections.tasks}
+        onPress={() => toggleSection('tasks')}
       />
-      <Text style={styles.completedLink}>Выполненные ({completedCount}) ›</Text>
+      <View {...(dropAttributesForList('tasks') as object)}>
+        {expandedSections.tasks ? (
+          <TaskStack
+            listKey="tasks"
+            tasks={regularTasks}
+            empty="На сегодня задач нет"
+            expandedTaskId={expandedTaskId}
+            draggingTaskId={draggingTaskId}
+            dragAttributesForTask={dragAttributesForTask}
+            onTaskPress={toggleTaskExpansion}
+            onTaskLongPress={(task) => setMenuTask(task)}
+            onToggle={onToggle}
+          />
+        ) : null}
+      </View>
+      <SectionTitle
+        title={`Выполнены (${completedTasks.length})`}
+        collapsible
+        expanded={expandedSections.completed}
+        onPress={() => toggleSection('completed')}
+      />
+      {expandedSections.completed ? (
+        <TaskStack
+          listKey="completed"
+          tasks={completedTasks}
+          empty="Пока нет выполненных задач"
+          expandedTaskId={expandedTaskId}
+          draggingTaskId={draggingTaskId}
+          dragAttributesForTask={dragAttributesForTask}
+          onTaskPress={toggleTaskExpansion}
+          onTaskLongPress={(task) => setMenuTask(task)}
+          onToggle={onToggle}
+        />
+      ) : null}
       <Text style={styles.footerStat}>
         {tasks.length} задач{'\n'}День загружен на {formatDuration(plannedMinutes)}
       </Text>
+      <ActionMenuModal
+        visible={Boolean(menuTask)}
+        title={menuTask?.title ?? 'Задача'}
+        onClose={() => setMenuTask(null)}
+        items={[
+          {
+            label: 'Сделать общей',
+            icon: Users,
+            onPress: () => {
+              if (menuTask) onMakeShared(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Перенести в идеи',
+            icon: Lightbulb,
+            onPress: () => {
+              if (menuTask) onMoveToIdea(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+          {
+            label: 'Удалить',
+            icon: Trash2,
+            destructive: true,
+            onPress: () => {
+              if (menuTask) onDelete(menuTask.id);
+              setMenuTask(null);
+            },
+          },
+        ]}
+      />
     </View>
   );
 }
@@ -1364,20 +1736,22 @@ function TaskEditorModal({
   visible,
   task,
   initialTitle,
+  initialDraft,
   onClose,
   onSave,
 }: {
   visible: boolean;
   task?: Task;
   initialTitle?: string;
+  initialDraft?: Partial<TaskDraft>;
   onClose: () => void;
   onSave: (draft: TaskDraft, taskId?: string) => void;
 }) {
-  const [draft, setDraft] = useState<TaskDraft>(() => toDraft(task, initialTitle));
+  const [draft, setDraft] = useState<TaskDraft>(() => toDraft(task, initialTitle, initialDraft));
 
   useEffect(() => {
-    if (visible) setDraft(toDraft(task, initialTitle));
-  }, [initialTitle, task, visible]);
+    if (visible) setDraft(toDraft(task, initialTitle, initialDraft));
+  }, [initialDraft, initialTitle, task, visible]);
 
   const update = (patch: Partial<TaskDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
@@ -1700,24 +2074,54 @@ function AddInput({
   );
 }
 
-function SectionTitle({ title, collapsible }: { title: string; collapsible?: boolean }) {
+function SectionTitle({
+  title,
+  collapsible,
+  expanded,
+  onPress,
+}: {
+  title: string;
+  collapsible?: boolean;
+  expanded?: boolean;
+  onPress?: () => void;
+}) {
+  const ChevronIcon = expanded === false ? ChevronRight : ChevronDown;
+
   return (
-    <View style={styles.sectionTitleRow}>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={styles.sectionTitleRow}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={collapsible ? { expanded: expanded ?? true } : undefined}
+    >
       <Text style={styles.sectionTitle}>{title}</Text>
-      {collapsible ? <ChevronDown size={17} color={colors.text} strokeWidth={2} /> : null}
-    </View>
+      {collapsible ? <ChevronIcon size={17} color={colors.text} strokeWidth={2} /> : null}
+    </Pressable>
   );
 }
 
 function TaskStack({
+  listKey,
   tasks,
   empty,
+  expandedTaskId,
+  draggingTaskId,
+  hideFocusBadge,
+  dragAttributesForTask,
   onTaskPress,
+  onTaskLongPress,
   onToggle,
 }: {
+  listKey?: DayTaskListKey;
   tasks: Task[];
   empty?: string;
+  expandedTaskId?: string | null;
+  draggingTaskId?: string | null;
+  hideFocusBadge?: boolean;
+  dragAttributesForTask?: (task: Task, list: DayTaskListKey) => Record<string, unknown> | undefined;
   onTaskPress: (taskId: string) => void;
+  onTaskLongPress?: (task: Task) => void;
   onToggle: (taskId: string) => void;
 }) {
   if (!tasks.length) {
@@ -1734,7 +2138,14 @@ function TaskStack({
         <TaskCard
           key={task.id}
           task={task}
+          expanded={expandedTaskId === task.id}
+          dragging={draggingTaskId === task.id}
+          hideFocusBadge={hideFocusBadge}
+          dragAttributes={
+            listKey && dragAttributesForTask ? dragAttributesForTask(task, listKey) : undefined
+          }
           onPress={() => onTaskPress(task.id)}
+          onLongPress={onTaskLongPress ? () => onTaskLongPress(task) : undefined}
           onToggle={() => onToggle(task.id)}
         />
       ))}
@@ -1744,17 +2155,37 @@ function TaskStack({
 
 function TaskCard({
   task,
+  expanded,
+  dragging,
+  hideFocusBadge,
+  dragAttributes,
   onPress,
+  onLongPress,
   onToggle,
 }: {
   task: Task;
+  expanded?: boolean;
+  dragging?: boolean;
+  hideFocusBadge?: boolean;
+  dragAttributes?: Record<string, unknown>;
   onPress: () => void;
+  onLongPress?: () => void;
   onToggle: () => void;
 }) {
   const accent = getAccent(task);
 
   return (
-    <Pressable onPress={onPress} style={styles.taskCard}>
+    <Pressable
+      {...(dragAttributes as object)}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={360}
+      style={[
+        styles.taskCard,
+        expanded && styles.taskCardExpanded,
+        dragging && styles.taskCardDragging,
+      ]}
+    >
       <View style={styles.taskRow}>
         <Pressable onPress={onToggle} style={styles.checkbox}>
           {task.status === 'completed' ? <Check size={15} color={colors.text} /> : null}
@@ -1767,7 +2198,7 @@ function TaskCard({
                 <Text style={styles.ownerText}>{task.linkedUser}</Text>
               </View>
             ) : null}
-            {task.focus ? <Text style={styles.badgeText}>Фокус</Text> : null}
+            {task.focus && !hideFocusBadge ? <Text style={styles.badgeText}>Фокус</Text> : null}
             {task.important ? <Text style={styles.badgeText}>Важное</Text> : null}
           </View>
           <Text
@@ -1785,8 +2216,34 @@ function TaskCard({
           ) : null}
         </View>
       </View>
+      {expanded ? <TaskInlineDetails task={task} /> : null}
       <View style={[styles.accentRail, { backgroundColor: accent }]} />
     </Pressable>
+  );
+}
+
+function TaskInlineDetails({ task }: { task: Task }) {
+  return (
+    <View style={styles.taskInlineDetails}>
+      <Text style={styles.taskInlineDescription}>
+        {task.description || 'Описание пока не добавлено.'}
+      </Text>
+      <View style={styles.taskInlineMetaGrid}>
+        <View style={styles.taskInlineMetaItem}>
+          <Text style={styles.taskInlineMetaLabel}>Результат</Text>
+          <Text style={styles.taskInlineMetaValue}>Задача закрыта без лишних уточнений</Text>
+        </View>
+        <View style={styles.taskInlineMetaItem}>
+          <Text style={styles.taskInlineMetaLabel}>Связь</Text>
+          <Text style={styles.taskInlineMetaValue}>
+            {task.linkedUser ? task.linkedUser : 'Личная задача'}
+          </Text>
+        </View>
+      </View>
+      {task.comments.length > 0 ? (
+        <Text style={styles.taskInlineComments}>Комментарии: {task.comments.length}</Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -1834,8 +2291,8 @@ function IconButton({ icon: Icon }: { icon: typeof Menu }) {
   );
 }
 
-function toDraft(task?: Task, initialTitle?: string): TaskDraft {
-  return {
+function toDraft(task?: Task, initialTitle?: string, initialDraft?: Partial<TaskDraft>): TaskDraft {
+  const draft = {
     title: task?.title ?? initialTitle ?? '',
     description: task?.description ?? '',
     date: task?.date ?? TODAY,
@@ -1846,6 +2303,7 @@ function toDraft(task?: Task, initialTitle?: string): TaskDraft {
     focus: task?.focus ?? false,
     important: task?.important ?? false,
   };
+  return { ...draft, ...initialDraft };
 }
 
 function sortTasks(items: Task[]) {
@@ -1856,6 +2314,48 @@ function sortTasks(items: Task[]) {
     if (dateDelta !== 0) return dateDelta;
     return (a.time ?? '99:99').localeCompare(b.time ?? '99:99');
   });
+}
+
+function orderDayTasks(items: Task[]) {
+  const focusItems = items.filter((task) => task.focus);
+  const regularItems = sortTasks(items.filter((task) => !task.focus));
+  return [...focusItems, ...regularItems];
+}
+
+function reorderTaskForDay(
+  items: Task[],
+  taskId: string,
+  order: { list: DayTaskListKey; beforeTaskId?: string },
+) {
+  const movingTask = items.find((task) => task.id === taskId);
+  if (!movingTask || order.list === 'completed') return items;
+
+  const withoutMoving = items.filter((task) => task.id !== taskId);
+  if (order.beforeTaskId && order.beforeTaskId !== taskId) {
+    const beforeIndex = withoutMoving.findIndex((task) => task.id === order.beforeTaskId);
+    if (beforeIndex >= 0) {
+      return [
+        ...withoutMoving.slice(0, beforeIndex),
+        movingTask,
+        ...withoutMoving.slice(beforeIndex),
+      ];
+    }
+  }
+
+  const sameDayActive = (task: Task) => task.status === 'active' && task.date === movingTask.date;
+  const targetList = order.list === 'focus'
+    ? (task: Task) => sameDayActive(task) && task.focus
+    : (task: Task) => sameDayActive(task) && !task.focus;
+  const insertAfterIndex = withoutMoving.reduce(
+    (lastIndex, task, index) => (targetList(task) ? index : lastIndex),
+    -1,
+  );
+
+  return [
+    ...withoutMoving.slice(0, insertAfterIndex + 1),
+    movingTask,
+    ...withoutMoving.slice(insertAfterIndex + 1),
+  ];
 }
 
 function parseOptionalInt(value: string) {
@@ -2250,6 +2750,13 @@ const styles = StyleSheet.create({
     elevation: 4,
     overflow: 'hidden',
   },
+  taskCardExpanded: {
+    minHeight: 164,
+  },
+  taskCardDragging: {
+    opacity: 0.72,
+    transform: [{ scale: 0.99 }],
+  },
   taskRow: {
     minHeight: 50,
     flexDirection: 'row',
@@ -2313,6 +2820,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
     textAlign: 'right',
+  },
+  taskInlineDetails: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    gap: 10,
+  },
+  taskInlineDescription: {
+    color: '#3f3f3f',
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  taskInlineMetaGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  taskInlineMetaItem: {
+    flex: 1,
+    minWidth: 0,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#f4f4f4',
+  },
+  taskInlineMetaLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  taskInlineMetaValue: {
+    marginTop: 3,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  taskInlineComments: {
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 18,
   },
   accentRail: {
     position: 'absolute',
@@ -2636,6 +3182,74 @@ const styles = StyleSheet.create({
     color: '#555555',
     fontSize: 14,
     lineHeight: 20,
+  },
+  menuBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  menuSheet: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 22,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: colors.bg,
+  },
+  menuHeader: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  menuTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.text,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700',
+  },
+  menuCloseButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuItems: {
+    marginTop: 8,
+    gap: 8,
+  },
+  menuItem: {
+    minHeight: 52,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  menuIconWrap: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#f2f2f2',
+  },
+  menuIconWrapDanger: {
+    backgroundColor: '#fff0f1',
+  },
+  menuItemText: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.text,
+    fontSize: 17,
+    lineHeight: 22,
+  },
+  menuItemTextDanger: {
+    color: colors.red,
   },
   editorSheet: {
     maxHeight: '92%',

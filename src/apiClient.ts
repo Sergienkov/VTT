@@ -124,6 +124,13 @@ export async function updateRemoteTask(auth: AuthState, task: Task) {
   });
 }
 
+export async function deleteRemoteTask(auth: AuthState, taskId: string) {
+  return apiRequest<ItemResponse<ApiTask>>(`/tasks/${encodeURIComponent(taskId)}`, {
+    auth,
+    method: 'DELETE',
+  });
+}
+
 export async function setRemoteTaskStatus(auth: AuthState, taskId: string, status: TaskStatus) {
   const action = status === 'completed' ? 'complete' : 'reopen';
   return apiRequest<ItemResponse<ApiTask>>(`/tasks/${encodeURIComponent(taskId)}/${action}`, {
