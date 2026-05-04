@@ -722,6 +722,7 @@ export default function App() {
                   completedTasks={completedDayTasks}
                   onTaskPress={markTaskSeen}
                   onToggle={toggleTask}
+                  onEdit={(taskId) => setTaskEditor({ visible: true, taskId })}
                   onSetFocus={setTaskFocus}
                   onReorderFocus={reorderFocusTask}
                   onMakeShared={makeTaskShared}
@@ -738,6 +739,7 @@ export default function App() {
                   completedTasks={filteredCompletedTasks}
                   onTaskPress={markTaskSeen}
                   onToggle={toggleTask}
+                  onEdit={(taskId) => setTaskEditor({ visible: true, taskId })}
                   onMakeImportant={markTaskImportant}
                   onMakeShared={makeTaskShared}
                   onMoveToIdea={moveTaskToIdea}
@@ -750,6 +752,7 @@ export default function App() {
                   onCreateShared={(draft) => saveTask(draft)}
                   onTaskPress={markTaskSeen}
                   onToggle={toggleTask}
+                  onEdit={(taskId) => setTaskEditor({ visible: true, taskId })}
                   onMakeImportant={markTaskImportant}
                   onMoveToIdea={moveTaskToIdea}
                   onDelete={deleteTask}
@@ -1295,6 +1298,7 @@ function TaskContextMenuOverlay({
             task={task}
             onPress={() => undefined}
             onToggle={() => undefined}
+            onEdit={() => undefined}
           />
           <View style={styles.taskContextMenu}>
             {items.map((item) => {
@@ -1337,6 +1341,7 @@ function DayScreen({
   completedTasks,
   onTaskPress,
   onToggle,
+  onEdit,
   onSetFocus,
   onReorderFocus,
   onMakeShared,
@@ -1348,6 +1353,7 @@ function DayScreen({
   completedTasks: Task[];
   onTaskPress: (taskId: string) => void;
   onToggle: (taskId: string) => void;
+  onEdit: (taskId: string) => void;
   onSetFocus: (taskId: string, focus: boolean, beforeTaskId?: string) => void;
   onReorderFocus: (taskId: string, beforeTaskId?: string) => void;
   onMakeShared: (taskId: string) => void;
@@ -1485,6 +1491,7 @@ function DayScreen({
               setMenuAnchorY(event?.nativeEvent?.pageY);
             }}
             onToggle={onToggle}
+            onEdit={onEdit}
           />
         ) : null}
       </View>
@@ -1509,6 +1516,7 @@ function DayScreen({
               setMenuAnchorY(event?.nativeEvent?.pageY);
             }}
             onToggle={onToggle}
+            onEdit={onEdit}
           />
         ) : null}
       </View>
@@ -1532,6 +1540,7 @@ function DayScreen({
             setMenuAnchorY(event?.nativeEvent?.pageY);
           }}
           onToggle={onToggle}
+          onEdit={onEdit}
         />
       ) : null}
       <Text style={styles.footerStat}>
@@ -1581,6 +1590,7 @@ function AllTasksScreen({
   completedTasks,
   onTaskPress,
   onToggle,
+  onEdit,
   onMakeImportant,
   onMakeShared,
   onMoveToIdea,
@@ -1593,6 +1603,7 @@ function AllTasksScreen({
   completedTasks: Task[];
   onTaskPress: (taskId: string) => void;
   onToggle: (taskId: string) => void;
+  onEdit: (taskId: string) => void;
   onMakeImportant: (taskId: string) => void;
   onMakeShared: (taskId: string) => void;
   onMoveToIdea: (taskId: string) => void;
@@ -1631,6 +1642,7 @@ function AllTasksScreen({
             setMenuAnchorY(event?.nativeEvent?.pageY);
           }}
           onToggle={onToggle}
+          onEdit={onEdit}
         />
       ) : null}
       <SectionTitle
@@ -1656,6 +1668,7 @@ function AllTasksScreen({
             setMenuAnchorY(event?.nativeEvent?.pageY);
           }}
           onToggle={onToggle}
+          onEdit={onEdit}
         />
       ) : null}
       <TaskContextMenuOverlay
@@ -1707,6 +1720,7 @@ function LinksScreen({
   onCreateShared,
   onTaskPress,
   onToggle,
+  onEdit,
   onMakeImportant,
   onMoveToIdea,
   onDelete,
@@ -1715,6 +1729,7 @@ function LinksScreen({
   onCreateShared: (draft: TaskDraft) => void;
   onTaskPress: (taskId: string) => void;
   onToggle: (taskId: string) => void;
+  onEdit: (taskId: string) => void;
   onMakeImportant: (taskId: string) => void;
   onMoveToIdea: (taskId: string) => void;
   onDelete: (taskId: string) => void;
@@ -1774,6 +1789,7 @@ function LinksScreen({
               setMenuAnchorY(event?.nativeEvent?.pageY);
             }}
             onToggle={onToggle}
+            onEdit={onEdit}
           />
         ) : null}
       </>
@@ -2502,7 +2518,7 @@ function SectionTitle({
       accessibilityState={collapsible ? { expanded: expanded ?? true } : undefined}
     >
       <Text style={styles.sectionTitle}>{title}</Text>
-      {collapsible ? <ChevronIcon size={17} color={colors.text} strokeWidth={2} /> : null}
+      {collapsible ? <ChevronIcon size={16} color="#6f6f6f" strokeWidth={2} /> : null}
     </Pressable>
   );
 }
@@ -2518,6 +2534,7 @@ function TaskStack({
   onTaskPress,
   onTaskLongPress,
   onToggle,
+  onEdit,
 }: {
   listKey?: DayTaskListKey;
   tasks: Task[];
@@ -2529,6 +2546,7 @@ function TaskStack({
   onTaskPress: (taskId: string) => void;
   onTaskLongPress?: (task: Task, event?: any) => void;
   onToggle: (taskId: string) => void;
+  onEdit: (taskId: string) => void;
 }) {
   if (!tasks.length) {
     return (
@@ -2553,6 +2571,7 @@ function TaskStack({
           onPress={() => onTaskPress(task.id)}
           onLongPress={onTaskLongPress ? (event) => onTaskLongPress(task, event) : undefined}
           onToggle={() => onToggle(task.id)}
+          onEdit={() => onEdit(task.id)}
         />
       ))}
     </View>
@@ -2568,6 +2587,7 @@ function TaskCard({
   onPress,
   onLongPress,
   onToggle,
+  onEdit,
 }: {
   task: Task;
   expanded?: boolean;
@@ -2577,6 +2597,7 @@ function TaskCard({
   onPress: () => void;
   onLongPress?: (event: any) => void;
   onToggle: () => void;
+  onEdit: () => void;
 }) {
   const RightIcon = rightAction?.icon;
   const hasOwner = Boolean(task.linkedUser);
@@ -2644,14 +2665,25 @@ function TaskCard({
           </View>
         )}
       </View>
-      {expanded ? <TaskInlineDetails task={task} /> : null}
+      {expanded ? <TaskInlineDetails task={task} onEdit={onEdit} /> : null}
     </Pressable>
   );
 }
 
-function TaskInlineDetails({ task }: { task: Task }) {
+function TaskInlineDetails({ task, onEdit }: { task: Task; onEdit: () => void }) {
   return (
     <View style={styles.taskInlineDetails}>
+      <Pressable
+        onPress={(event) => {
+          event.stopPropagation?.();
+          onEdit();
+        }}
+        style={styles.taskInlineEditButton}
+        accessibilityLabel="Редактировать задачу"
+        accessibilityRole="button"
+      >
+        <Edit3 size={18} color={colors.text} strokeWidth={1.9} />
+      </Pressable>
       <Text style={styles.taskInlineDescription}>
         {task.description || 'Описание пока не добавлено.'}
       </Text>
@@ -2659,12 +2691,6 @@ function TaskInlineDetails({ task }: { task: Task }) {
         <View style={styles.taskInlineMetaItem}>
           <Text style={styles.taskInlineMetaLabel}>Результат</Text>
           <Text style={styles.taskInlineMetaValue}>Задача закрыта без лишних уточнений</Text>
-        </View>
-        <View style={styles.taskInlineMetaItem}>
-          <Text style={styles.taskInlineMetaLabel}>Связь</Text>
-          <Text style={styles.taskInlineMetaValue}>
-            {task.linkedUser ? task.linkedUser : 'Без связанного пользователя'}
-          </Text>
         </View>
       </View>
       {task.comments.length > 0 ? (
@@ -3145,18 +3171,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sectionTitleRow: {
-    minHeight: 34,
-    marginTop: 10,
-    marginBottom: 5,
+    minHeight: 28,
+    marginTop: 9,
+    marginBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
   },
   sectionTitle: {
-    color: colors.text,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '700',
+    color: '#6f6f6f',
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   cardStack: {
     gap: 7,
@@ -3258,11 +3284,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff0f1',
   },
   taskInlineDetails: {
+    position: 'relative',
     marginTop: 8,
     paddingTop: 8,
+    paddingRight: 34,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line,
     gap: 10,
+  },
+  taskInlineEditButton: {
+    position: 'absolute',
+    top: 6,
+    right: 0,
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#f3f3f3',
   },
   taskInlineDescription: {
     color: '#3f3f3f',
