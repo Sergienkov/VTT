@@ -1,4 +1,4 @@
-import { AuthState, Idea, StoredState, Task, TaskStatus, User } from './domain';
+import { AuthState, Idea, PublicSharedTask, StoredState, Task, TaskStatus, User } from './domain';
 
 type ApiTaskParticipant = {
   userId: string;
@@ -22,8 +22,13 @@ type ApiTask = {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
+  publicShareToken?: string;
+  publicShareAcceptedAt?: string;
+  publicShareCompletedAt?: string;
   participants: ApiTaskParticipant[];
 };
+
+type ApiPublicSharedTask = PublicSharedTask;
 
 type ApiIdea = {
   id: string;
@@ -146,6 +151,72 @@ export async function markRemoteTaskSeen(auth: AuthState, taskId: string) {
   });
 }
 
+export async function shareRemoteTaskWithUser(
+  auth: AuthState,
+  taskId: string,
+  input: { userId?: string; phone?: string; name?: string },
+) {
+  const response = await apiRequest<{ item: ApiTask; user: User }>(
+    `/tasks/${encodeURIComponent(taskId)}/share/user`,
+    {
+      auth,
+      method: 'POST',
+      body: input,
+    },
+  );
+  return {
+    task: toAppTask(response.item, auth.user.id, []),
+    user: response.user,
+  };
+}
+
+export async function createRemoteTaskShareLink(auth: AuthState, taskId: string) {
+  const response = await apiRequest<{
+    item: ApiTask;
+    share: { token: string; url: string };
+  }>(`/tasks/${encodeURIComponent(taskId)}/share-link`, {
+    auth,
+    method: 'POST',
+  });
+  return {
+    task: toAppTask(response.item, auth.user.id, []),
+    token: response.share.token,
+    url: response.share.url,
+  };
+}
+
+export async function claimRemoteTaskShare(auth: AuthState, token: string) {
+  const response = await apiRequest<ItemResponse<ApiTask>>('/task-shares/claim', {
+    auth,
+    method: 'POST',
+    body: { token },
+  });
+  return toAppTask(response.item, auth.user.id, []);
+}
+
+export async function loadPublicSharedTask(token: string) {
+  const response = await apiRequest<ItemResponse<ApiPublicSharedTask>>(
+    `/public/tasks/${encodeURIComponent(token)}`,
+  );
+  return response.item;
+}
+
+export async function acceptPublicSharedTask(token: string) {
+  const response = await apiRequest<ItemResponse<ApiPublicSharedTask>>(
+    `/public/tasks/${encodeURIComponent(token)}/accept`,
+    { method: 'POST' },
+  );
+  return response.item;
+}
+
+export async function completePublicSharedTask(token: string) {
+  const response = await apiRequest<ItemResponse<ApiPublicSharedTask>>(
+    `/public/tasks/${encodeURIComponent(token)}/complete`,
+    { method: 'POST' },
+  );
+  return response.item;
+}
+
 export async function createRemoteComment(auth: AuthState, taskId: string, body: string) {
   return apiRequest<ItemResponse<ApiComment>>(
     `/tasks/${encodeURIComponent(taskId)}/comments`,
@@ -260,6 +331,10 @@ function toAppTask(task: ApiTask, currentUserId: string, comments: string[]): Ta
     important: task.important,
     seen: Boolean(currentParticipant?.seenAt),
     comments,
+    publicShareToken: task.publicShareToken,
+    publicShareUrl: task.publicShareToken ? shareUrlForToken(task.publicShareToken) : undefined,
+    publicShareAcceptedAt: task.publicShareAcceptedAt,
+    publicShareCompletedAt: task.publicShareCompletedAt,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   };
@@ -297,6 +372,14 @@ function userIdForLabel(label: string) {
 
 function labelForUser(userId: string) {
   return devUserLabelsById[userId] ?? userId;
+}
+
+function shareUrlForToken(token: string) {
+  const apiBase = getApiBaseUrl();
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/task/${encodeURIComponent(token)}`;
+  }
+  return `${apiBase.replace(/\/api\/?$/, '')}/task/${encodeURIComponent(token)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -168,6 +168,31 @@ protectedRoutes.post('/tasks/:id/seen', (c) => {
   return c.json({ item: task });
 });
 
+protectedRoutes.post('/tasks/:id/share/user', async (c) => {
+  const body = await bodyRecord(c);
+  const result = store.shareTaskWithUser(c.get('user').id, c.req.param('id'), {
+    userId: readString(body, 'userId'),
+    phone: readString(body, 'phone'),
+    name: readString(body, 'name'),
+  });
+  if (!result) return jsonError(c, 404, 'task_or_user_not_found', 'Task or user not found.');
+  return c.json({ item: result.task, user: result.user });
+});
+
+protectedRoutes.post('/tasks/:id/share-link', (c) => {
+  const task = store.createTaskPublicShare(c.get('user').id, c.req.param('id'));
+  if (!task) return jsonError(c, 404, 'task_not_found', 'Task not found.');
+  const token = task.publicShareToken;
+  if (!token) return jsonError(c, 500, 'share_token_missing', 'Share token was not created.');
+  return c.json({
+    item: task,
+    share: {
+      token,
+      url: taskShareUrl(c, token),
+    },
+  });
+});
+
 protectedRoutes.get('/tasks/:id/comments', (c) => {
   const comments = store.listCommentsForTask(
     c.get('user').id,
@@ -264,6 +289,13 @@ protectedRoutes.post('/links/accept', async (c) => {
   return c.json({ ok: true, user });
 });
 
+protectedRoutes.post('/task-shares/claim', async (c) => {
+  const body = await bodyRecord(c);
+  const task = store.claimPublicTask(c.get('user').id, readRequiredString(body, 'token'));
+  if (!task) return jsonError(c, 404, 'share_not_found', 'Shared task not found.');
+  return c.json({ item: task });
+});
+
 protectedRoutes.get('/events', (c) => {
   const unreadOnly = c.req.query('unreadOnly') === 'true';
   return c.json({ items: store.listEvents(c.get('user').id, unreadOnly) });
@@ -303,6 +335,24 @@ protectedRoutes.post('/sync/push', async (c) => {
     return jsonError(c, 400, 'changes_required', 'Changes must be an array.');
   }
   return c.json(store.pushSync(c.get('user').id, changes as SyncChange[]));
+});
+
+app.get('/public/tasks/:token', (c) => {
+  const task = store.getPublicTask(c.req.param('token'));
+  if (!task) return jsonError(c, 404, 'share_not_found', 'Shared task not found.');
+  return c.json({ item: { ...task, shareUrl: taskShareUrl(c, task.token) } });
+});
+
+app.post('/public/tasks/:token/accept', (c) => {
+  const task = store.acceptPublicTask(c.req.param('token'));
+  if (!task) return jsonError(c, 404, 'share_not_found', 'Shared task not found.');
+  return c.json({ item: { ...task, shareUrl: taskShareUrl(c, task.token) } });
+});
+
+app.post('/public/tasks/:token/complete', (c) => {
+  const task = store.completePublicTask(c.req.param('token'));
+  if (!task) return jsonError(c, 404, 'share_not_found', 'Shared task not found.');
+  return c.json({ item: { ...task, shareUrl: taskShareUrl(c, task.token) } });
 });
 
 app.route('/', protectedRoutes);
@@ -355,6 +405,12 @@ function parseTaskStatus(status?: string) {
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function taskShareUrl(c: Context, token: string) {
+  const host = c.req.header('x-forwarded-host') ?? c.req.header('host') ?? 'localhost:8787';
+  const proto = c.req.header('x-forwarded-proto') ?? (host.includes('localhost') ? 'http' : 'https');
+  return `${proto}://${host}/task/${encodeURIComponent(token)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

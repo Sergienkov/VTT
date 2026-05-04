@@ -8,7 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Copy,
   Edit3,
+  Link2,
   Lightbulb,
   Menu,
   Mic,
@@ -18,6 +20,7 @@ import {
   Star,
   Sun,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react-native';
@@ -36,15 +39,21 @@ import {
 } from 'react-native';
 
 import {
+  acceptPublicSharedTask,
+  claimRemoteTaskShare,
+  completePublicSharedTask,
   createRemoteComment,
   createRemoteIdea,
   createRemoteTask,
+  createRemoteTaskShareLink,
   convertRemoteIdea,
   deleteRemoteTask,
+  loadPublicSharedTask,
   loadRemoteState,
   logoutRemote,
   markRemoteTaskSeen,
   setRemoteTaskStatus,
+  shareRemoteTaskWithUser,
   startPhoneLogin,
   updateRemoteTask,
   verifyPhoneLogin,
@@ -55,6 +64,7 @@ import {
   AuthState,
   Idea,
   PendingMutation,
+  PublicSharedTask,
   Task,
   TaskDraft,
   TaskStatus,
@@ -100,6 +110,17 @@ type CardAction = {
   destructive?: boolean;
   onPress: () => void;
 };
+type ShareDialogState = {
+  visible: boolean;
+  taskId?: string;
+  shareUrl?: string;
+  status?: string;
+};
+type ShareContact = {
+  userId: string;
+  name: string;
+  phone: string;
+};
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Sun }> = [
   { key: 'day', label: 'День', icon: Sun },
@@ -112,6 +133,12 @@ const dateShortcuts = [
   { label: 'Сегодня', value: TODAY },
   { label: 'Завтра', value: TOMORROW },
   { label: '+2 дня', value: addDays(TODAY, 2) },
+];
+
+const shareContacts: ShareContact[] = [
+  { userId: 'user_2', name: 'Анна', phone: '+79990000001' },
+  { userId: 'user_3', name: 'Алексей', phone: '+79990000002' },
+  { userId: 'user_4', name: 'Денис', phone: '+79990000003' },
 ];
 
 const colors = {
@@ -142,6 +169,9 @@ export default function App() {
   }>({ visible: false });
   const [ideaEditorVisible, setIdeaEditorVisible] = useState(false);
   const [createMenuVisible, setCreateMenuVisible] = useState(false);
+  const [shareAfterCreate, setShareAfterCreate] = useState(false);
+  const [shareDialog, setShareDialog] = useState<ShareDialogState>({ visible: false });
+  const [publicTaskToken, setPublicTaskToken] = useState(getInitialPublicTaskToken);
   const [allSearchVisible, setAllSearchVisible] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [auth, setAuth] = useState<AuthState | null>(null);
@@ -312,7 +342,7 @@ export default function App() {
     return completedTasks.filter((task) => !trimmed || task.title.toLowerCase().includes(trimmed));
   }, [completedTasks, query]);
 
-  const linkedTasks = tasks.filter((task) => Boolean(task.linkedUser));
+  const linkedTasks = tasks.filter((task) => Boolean(task.linkedUser || task.publicShareToken));
 
   const refreshFromApi = (session: AuthState) => {
     setSyncStatus('Синхронизация');
@@ -366,6 +396,45 @@ export default function App() {
     });
     persistTaskUpdate(nextTask);
   };
+
+  const replaceTask = (remoteTask: Task) => {
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === remoteTask.id
+          ? { ...remoteTask, comments: remoteTask.comments.length ? remoteTask.comments : task.comments }
+          : task,
+      ),
+    );
+  };
+
+  useEffect(() => {
+    if (publicTaskToken) savePendingShareToken(publicTaskToken);
+  }, [publicTaskToken]);
+
+  useEffect(() => {
+    if (!auth || localOnly || !online) return;
+    const token = readPendingShareToken();
+    if (!token) return;
+    claimRemoteTaskShare(auth, token)
+      .then((remoteTask) => {
+        setTasks((current) => {
+          const exists = current.some((task) => task.id === remoteTask.id);
+          return exists
+            ? current.map((task) =>
+                task.id === remoteTask.id
+                  ? { ...remoteTask, comments: task.comments }
+                  : task,
+              )
+            : [remoteTask, ...current];
+        });
+        clearPendingShareToken();
+        setSyncStatus('Задача добавлена в Общие');
+        refreshFromApi(auth);
+      })
+      .catch(() => {
+        setSyncStatus('Не удалось добавить задачу по ссылке');
+      });
+  }, [auth, localOnly, online]);
 
   useEffect(() => {
     if (!hydrated || !auth || localOnly || !online || !pendingMutations.length) return undefined;
@@ -486,6 +555,10 @@ export default function App() {
     );
     setSelectedTaskId(nextTask.id);
     setTaskEditor({ visible: false });
+    if (!isEdit && shareAfterCreate) {
+      setShareAfterCreate(false);
+      setShareDialog({ visible: true, taskId: nextTask.id });
+    }
     runQueuedRemoteMutation(
       (session) =>
         isEdit ? updateRemoteTask(session, nextTask) : createRemoteTask(session, nextTask),
@@ -542,13 +615,83 @@ export default function App() {
   };
 
   const makeTaskShared = (taskId: string) => {
-    const task = tasks.find((item) => item.id === taskId);
-    if (!task) return;
-    patchTask(taskId, {
-      linkedUser: task.linkedUser || 'Анна',
-      assignee: task.assignee || task.linkedUser || 'Анна',
-      seen: true,
-    });
+    setShareDialog({ visible: true, taskId });
+  };
+
+  const closeShareDialog = () => setShareDialog({ visible: false });
+
+  const shareTaskWithContact = (contact: ShareContact) => {
+    const taskId = shareDialog.taskId;
+    if (!taskId) return;
+    if (!auth || localOnly) {
+      Alert.alert('Общая задача', 'Для передачи задачи нужен вход в аккаунт.');
+      return;
+    }
+    setShareDialog((current) => ({ ...current, status: 'Добавляем пользователя' }));
+    shareRemoteTaskWithUser(auth, taskId, {
+      userId: contact.userId,
+      phone: contact.phone,
+      name: contact.name,
+    })
+      .then(({ task }) => {
+        replaceTask(task);
+        setShareDialog((current) => ({
+          ...current,
+          status: `Задача передана: ${contact.name}`,
+        }));
+        refreshFromApi(auth);
+      })
+      .catch(() => {
+        setShareDialog((current) => ({
+          ...current,
+          status: 'Не удалось передать задачу пользователю',
+        }));
+      });
+  };
+
+  const createShareLink = () => {
+    const taskId = shareDialog.taskId;
+    if (!taskId) return;
+    if (!auth || localOnly) {
+      Alert.alert('Ссылка на задачу', 'Для создания ссылки нужен вход в аккаунт.');
+      return;
+    }
+    setShareDialog((current) => ({ ...current, status: 'Создаем ссылку' }));
+    createRemoteTaskShareLink(auth, taskId)
+      .then(({ task, url }) => {
+        replaceTask(task);
+        setShareDialog((current) => ({
+          ...current,
+          shareUrl: url,
+          status: 'Ссылка готова',
+        }));
+        refreshFromApi(auth);
+      })
+      .catch(() => {
+        setShareDialog((current) => ({
+          ...current,
+          status: 'Не удалось создать ссылку',
+        }));
+      });
+  };
+
+  const copyShareLink = (url: string) => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
+      if (typeof navigator.share === 'function') {
+        navigator.share({ title: 'Общая задача VTT', url }).catch(() => undefined);
+        return;
+      }
+      navigator.clipboard?.writeText(url).catch(() => undefined);
+    }
+    Alert.alert('Ссылка', url);
+  };
+
+  const openAppFromPublicTask = (token: string) => {
+    savePendingShareToken(token);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/');
+    }
+    setPublicTaskToken(undefined);
   };
 
   const markTaskImportant = (taskId: string) => {
@@ -653,6 +796,28 @@ export default function App() {
       })
       .catch(() => enqueueMutation(pendingConvert));
   };
+
+  if (publicTaskToken) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.shell}>
+          <StatusBar style="dark" />
+          <PublicTaskScreen
+            token={publicTaskToken}
+            pwaAction={pwaAction}
+            onOpenApp={openAppFromPublicTask}
+            onChanged={() => {
+              if (auth) refreshFromApi(auth);
+            }}
+          />
+          <PwaInstallHelpModal
+            visible={pwaInstallHelpVisible}
+            onClose={() => setPwaInstallHelpVisible(false)}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (hydrated && !auth && !localOnly) {
     return (
@@ -774,7 +939,10 @@ export default function App() {
           task={taskEditor.taskId ? tasks.find((task) => task.id === taskEditor.taskId) : undefined}
           initialTitle={taskEditor.initialTitle}
           initialDraft={taskEditor.initialDraft}
-          onClose={() => setTaskEditor({ visible: false })}
+          onClose={() => {
+            setShareAfterCreate(false);
+            setTaskEditor({ visible: false });
+          }}
           onSave={saveTask}
         />
         <IdeaEditorModal
@@ -792,6 +960,7 @@ export default function App() {
               icon: CheckSquare,
               onPress: () => {
                 setCreateMenuVisible(false);
+                setShareAfterCreate(false);
                 setTaskEditor({ visible: true });
               },
             },
@@ -800,9 +969,10 @@ export default function App() {
               icon: Users,
               onPress: () => {
                 setCreateMenuVisible(false);
+                setShareAfterCreate(true);
                 setTaskEditor({
                   visible: true,
-                  initialDraft: { linkedUser: 'Анна', assignee: 'Анна' },
+                  initialDraft: {},
                 });
               },
             },
@@ -819,6 +989,16 @@ export default function App() {
         <PwaInstallHelpModal
           visible={pwaInstallHelpVisible}
           onClose={() => setPwaInstallHelpVisible(false)}
+        />
+        <ShareTaskModal
+          visible={shareDialog.visible}
+          task={shareDialog.taskId ? tasks.find((task) => task.id === shareDialog.taskId) : undefined}
+          shareUrl={shareDialog.shareUrl}
+          status={shareDialog.status}
+          onClose={closeShareDialog}
+          onSelectContact={shareTaskWithContact}
+          onCreateLink={createShareLink}
+          onCopyLink={copyShareLink}
         />
       </View>
     </SafeAreaView>
@@ -873,6 +1053,27 @@ function runPendingMutation(auth: AuthState, mutation: PendingMutation) {
 function getInitialOnline() {
   if (Platform.OS !== 'web' || typeof navigator === 'undefined') return true;
   return navigator.onLine;
+}
+
+function getInitialPublicTaskToken() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+  const match = window.location.pathname.match(/^\/task\/([^/?#]+)/);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
+function savePendingShareToken(token: string) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  window.localStorage.setItem('vtt_pending_share_token', token);
+}
+
+function readPendingShareToken() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+  return window.localStorage.getItem('vtt_pending_share_token') || undefined;
+}
+
+function clearPendingShareToken() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  window.localStorage.removeItem('vtt_pending_share_token');
 }
 
 function isStandalonePwa() {
@@ -1265,6 +1466,197 @@ function ActionMenuModal({
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+function ShareTaskModal({
+  visible,
+  task,
+  shareUrl,
+  status,
+  onClose,
+  onSelectContact,
+  onCreateLink,
+  onCopyLink,
+}: {
+  visible: boolean;
+  task?: Task;
+  shareUrl?: string;
+  status?: string;
+  onClose: () => void;
+  onSelectContact: (contact: ShareContact) => void;
+  onCreateLink: () => void;
+  onCopyLink: (url: string) => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.shareSheet}>
+          <View style={styles.editorHeader}>
+            <View style={styles.shareTitleStack}>
+              <Text style={styles.editorTitle}>Добавить человека</Text>
+              {task ? <Text numberOfLines={1} style={styles.shareTaskTitle}>{task.title}</Text> : null}
+            </View>
+            <Pressable onPress={onClose} style={styles.editorCloseButton}>
+              <X size={24} color={colors.text} />
+            </Pressable>
+          </View>
+
+          <Text style={styles.shareSectionLabel}>Выбрать из пользователей</Text>
+          <View style={styles.shareContactList}>
+            {shareContacts.map((contact) => (
+              <Pressable
+                key={contact.userId}
+                onPress={() => onSelectContact(contact)}
+                style={styles.shareContactItem}
+              >
+                <View style={styles.menuIconWrap}>
+                  <UserPlus size={19} color={colors.text} strokeWidth={2} />
+                </View>
+                <View style={styles.shareContactText}>
+                  <Text style={styles.shareContactName}>{contact.name}</Text>
+                  <Text style={styles.shareContactPhone}>{contact.phone}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.shareSectionLabel}>Или отправить ссылку</Text>
+          <Pressable onPress={onCreateLink} style={styles.shareLinkButton}>
+            <Link2 size={20} color="#ffffff" strokeWidth={2} />
+            <Text style={styles.shareLinkButtonText}>
+              {shareUrl ? 'Обновить ссылку' : 'Создать ссылку'}
+            </Text>
+          </Pressable>
+          {shareUrl ? (
+            <View style={styles.shareUrlBox}>
+              <Text numberOfLines={2} style={styles.shareUrlText}>{shareUrl}</Text>
+              <Pressable onPress={() => onCopyLink(shareUrl)} style={styles.shareCopyButton}>
+                <Copy size={18} color={colors.text} strokeWidth={2} />
+              </Pressable>
+            </View>
+          ) : null}
+          {status ? <Text style={styles.shareStatus}>{status}</Text> : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PublicTaskScreen({
+  token,
+  pwaAction,
+  onOpenApp,
+  onChanged,
+}: {
+  token: string;
+  pwaAction?: PwaAction;
+  onOpenApp: (token: string) => void;
+  onChanged: () => void;
+}) {
+  const [task, setTask] = useState<PublicSharedTask | null>(null);
+  const [status, setStatus] = useState('Загрузка задачи');
+
+  useEffect(() => {
+    let mounted = true;
+    setStatus('Загрузка задачи');
+    loadPublicSharedTask(token)
+      .then((item) => {
+        if (!mounted) return;
+        setTask(item);
+        setStatus('');
+      })
+      .catch(() => {
+        if (mounted) setStatus('Ссылка недоступна');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  const accept = () => {
+    setStatus('Принимаем задачу');
+    acceptPublicSharedTask(token)
+      .then((item) => {
+        setTask(item);
+        setStatus('Задача принята');
+        onChanged();
+      })
+      .catch(() => setStatus('Не удалось принять задачу'));
+  };
+
+  const complete = () => {
+    setStatus('Отмечаем выполнение');
+    completePublicSharedTask(token)
+      .then((item) => {
+        setTask(item);
+        setStatus('Готово. Автор увидит выполнение');
+        onChanged();
+      })
+      .catch(() => setStatus('Не удалось выполнить задачу'));
+  };
+
+  const installLabel = pwaAction?.tone === 'install' ? pwaAction.label : 'Установить приложение';
+  const completed = task?.status === 'completed';
+
+  return (
+    <View style={styles.publicTaskShell}>
+      <View style={styles.publicTaskHeader}>
+        <Text style={styles.publicTaskBrand}>VTT</Text>
+        <Text style={styles.publicTaskEyebrow}>Общая задача</Text>
+      </View>
+      <View style={styles.publicTaskCard}>
+        {task ? (
+          <>
+            <Text style={styles.publicTaskTitle}>{task.title}</Text>
+            {task.description ? (
+              <Text style={styles.publicTaskDescription}>{task.description}</Text>
+            ) : null}
+            <View style={styles.publicTaskMetaRow}>
+              <CalendarDays size={18} color={colors.muted} strokeWidth={2} />
+              <Text style={styles.publicTaskMetaText}>
+                {formatDate(task.date)}
+                {task.time ? `, до ${task.time}` : ''}
+                {task.durationMinutes ? `, ${formatDuration(task.durationMinutes)}` : ''}
+              </Text>
+            </View>
+            <View style={styles.publicTaskActions}>
+              <Pressable onPress={accept} style={styles.publicTaskSecondaryButton}>
+                <Text style={styles.publicTaskSecondaryText}>
+                  {task.acceptedAt ? 'Принята' : 'Принять задачу'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={complete}
+                disabled={completed}
+                style={[
+                  styles.publicTaskPrimaryButton,
+                  completed && styles.publicTaskPrimaryButtonDisabled,
+                ]}
+              >
+                <Text style={styles.publicTaskPrimaryText}>
+                  {completed ? 'Выполнена' : 'Отметить выполненной'}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <Text style={styles.publicTaskDescription}>{status}</Text>
+        )}
+      </View>
+      {status && task ? <Text style={styles.publicTaskStatus}>{status}</Text> : null}
+      <View style={styles.publicTaskInstall}>
+        <Pressable
+          onPress={pwaAction?.tone === 'install' ? pwaAction.onPress : () => onOpenApp(token)}
+          style={styles.publicTaskInstallButton}
+        >
+          <Text style={styles.publicTaskInstallText}>{installLabel}</Text>
+        </Pressable>
+        <Pressable onPress={() => onOpenApp(token)} style={styles.publicTaskOpenButton}>
+          <Text style={styles.publicTaskOpenText}>Перейти в приложение</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -2600,7 +2992,8 @@ function TaskCard({
   onEdit: () => void;
 }) {
   const RightIcon = rightAction?.icon;
-  const hasOwner = Boolean(task.linkedUser);
+  const linkedLabel = task.linkedUser || (task.publicShareToken ? 'По ссылке' : undefined);
+  const hasOwner = Boolean(linkedLabel);
 
   return (
     <Pressable
@@ -2624,7 +3017,7 @@ function TaskCard({
             <View style={styles.taskBadges}>
               <View style={styles.ownerRow}>
                 <Users size={15} color="#111827" fill="#111827" strokeWidth={2} />
-                <Text style={styles.ownerText}>{task.linkedUser}</Text>
+                <Text style={styles.ownerText}>{linkedLabel}</Text>
               </View>
             </View>
           ) : null}
@@ -2776,7 +3169,7 @@ function orderDayTasks(items: Task[]) {
 }
 
 function isTaskAssignedToOther(task: Task) {
-  return Boolean(task.linkedUser && task.assignee && task.assignee === task.linkedUser);
+  return Boolean(task.publicShareToken || (task.linkedUser && task.assignee && task.assignee === task.linkedUser));
 }
 
 function isOverdue(task: Task) {
@@ -3794,6 +4187,108 @@ const styles = StyleSheet.create({
   menuItemTextDanger: {
     color: colors.red,
   },
+  shareSheet: {
+    maxHeight: '88%',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 24,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: colors.bg,
+  },
+  shareTitleStack: {
+    flex: 1,
+    minWidth: 0,
+  },
+  shareTaskTitle: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  shareSectionLabel: {
+    marginTop: 14,
+    marginBottom: 8,
+    color: '#6f6f6f',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  shareContactList: {
+    gap: 8,
+  },
+  shareContactItem: {
+    minHeight: 54,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  shareContactText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  shareContactName: {
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '700',
+  },
+  shareContactPhone: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  shareLinkButton: {
+    minHeight: 46,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    backgroundColor: '#000000',
+  },
+  shareLinkButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '700',
+  },
+  shareUrlBox: {
+    minHeight: 48,
+    marginTop: 10,
+    paddingLeft: 12,
+    paddingRight: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  shareUrlText: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  shareCopyButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#f2f2f2',
+  },
+  shareStatus: {
+    marginTop: 10,
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 18,
+  },
   taskContextBackdrop: {
     flex: 1,
     paddingHorizontal: 12,
@@ -3821,6 +4316,133 @@ const styles = StyleSheet.create({
     gap: 10,
     borderRadius: 8,
     backgroundColor: '#ffffff',
+  },
+  publicTaskShell: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 24,
+    backgroundColor: colors.bg,
+  },
+  publicTaskHeader: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  publicTaskBrand: {
+    color: colors.text,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+  },
+  publicTaskEyebrow: {
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  publicTaskCard: {
+    marginTop: 18,
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  publicTaskTitle: {
+    color: colors.text,
+    fontSize: 24,
+    lineHeight: 31,
+    fontWeight: '800',
+  },
+  publicTaskDescription: {
+    marginTop: 12,
+    color: '#3f3f3f',
+    fontSize: 16,
+    lineHeight: 23,
+  },
+  publicTaskMetaRow: {
+    marginTop: 16,
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  publicTaskMetaText: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  publicTaskActions: {
+    marginTop: 18,
+    gap: 10,
+  },
+  publicTaskSecondaryButton: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#f1f1f1',
+  },
+  publicTaskSecondaryText: {
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '700',
+  },
+  publicTaskPrimaryButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#000000',
+  },
+  publicTaskPrimaryButtonDisabled: {
+    backgroundColor: '#676767',
+  },
+  publicTaskPrimaryText: {
+    color: '#ffffff',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '800',
+  },
+  publicTaskStatus: {
+    marginTop: 12,
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  publicTaskInstall: {
+    marginTop: 'auto',
+    gap: 10,
+  },
+  publicTaskInstallButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#000000',
+  },
+  publicTaskInstallText: {
+    color: '#ffffff',
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '800',
+  },
+  publicTaskOpenButton: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+  },
+  publicTaskOpenText: {
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '700',
   },
   editorSheet: {
     maxHeight: '92%',

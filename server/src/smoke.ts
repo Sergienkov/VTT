@@ -35,6 +35,56 @@ const tasks = await json(
 );
 assert(Array.isArray(tasks.items), 'tasks list failed');
 
+const createdTask = await json(
+  app.request('/tasks', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: 'Shared link smoke task',
+      description: 'Check public share flow',
+      date: '2026-05-04',
+    }),
+  }),
+);
+const createdTaskItem = readRecord(createdTask, 'item');
+const sharedTaskId = readString(createdTaskItem, 'id');
+
+const shareResponse = await json(
+  app.request(`/tasks/${encodeURIComponent(sharedTaskId)}/share-link`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }),
+);
+const share = readRecord(shareResponse, 'share');
+const shareToken = readString(share, 'token');
+
+const publicTask = await json(app.request(`/public/tasks/${encodeURIComponent(shareToken)}`));
+assert(readRecord(publicTask, 'item').title === 'Shared link smoke task', 'public task failed');
+
+const acceptedTask = await json(
+  app.request(`/public/tasks/${encodeURIComponent(shareToken)}/accept`, {
+    method: 'POST',
+  }),
+);
+assert(typeof readRecord(acceptedTask, 'item').acceptedAt === 'string', 'public accept failed');
+
+const completedTask = await json(
+  app.request(`/public/tasks/${encodeURIComponent(shareToken)}/complete`, {
+    method: 'POST',
+  }),
+);
+assert(readRecord(completedTask, 'item').status === 'completed', 'public complete failed');
+
+const authorTask = await json(
+  app.request(`/tasks/${encodeURIComponent(sharedTaskId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }),
+);
+assert(readRecord(authorTask, 'item').status === 'completed', 'author sync failed');
+
 const ideas = await json(
   app.request('/ideas', {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -71,6 +121,12 @@ async function json(responseValue: Response | Promise<Response>) {
 function readString(record: JsonRecord, key: string) {
   const value = record[key];
   if (typeof value !== 'string' || !value) throw new Error(`${key} missing`);
+  return value;
+}
+
+function readRecord(record: JsonRecord, key: string) {
+  const value = record[key];
+  if (!isRecord(value)) throw new Error(`${key} missing`);
   return value;
 }
 

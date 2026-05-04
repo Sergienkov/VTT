@@ -212,6 +212,76 @@ Patch accepts the same editable fields as creation. Delete is a soft delete.
 
 Used for the red dot and simplified "accepted/viewed" flow in shared tasks.
 
+### Share With Existing User
+
+`POST /tasks/:id/share/user`
+
+```json
+{
+  "userId": "user_2",
+  "phone": "+79990000001",
+  "name": "Анна"
+}
+```
+
+At least one of `userId` or `phone` is required. In MVP this adds the user as a participant and makes the task visible in their shared task list.
+
+### Create Public Share Link
+
+`POST /tasks/:id/share-link`
+
+Response:
+
+```json
+{
+  "item": {},
+  "share": {
+    "token": "unique_token",
+    "url": "https://veratt.ru/task/unique_token"
+  }
+}
+```
+
+### Claim Public Share After Login
+
+`POST /task-shares/claim`
+
+```json
+{
+  "token": "unique_token"
+}
+```
+
+Adds the authenticated user as a participant so the task appears in `Общие → Мои задачи`.
+
+## Public Shared Task
+
+These endpoints do not require authentication and expose only the single task identified by the token.
+
+- `GET /public/tasks/:token`
+- `POST /public/tasks/:token/accept`
+- `POST /public/tasks/:token/complete`
+
+Public response:
+
+```json
+{
+  "item": {
+    "token": "unique_token",
+    "shareUrl": "https://veratt.ru/task/unique_token",
+    "title": "Проверить задачу",
+    "description": "Короткий контекст",
+    "date": "2026-05-04",
+    "time": "18:00",
+    "durationMinutes": 30,
+    "status": "active",
+    "acceptedAt": "2026-05-04T10:00:00.000Z",
+    "completedAt": "2026-05-04T11:00:00.000Z",
+    "updatedAt": "2026-05-04T11:00:00.000Z"
+  }
+}
+```
+
 ### Comments
 
 - `GET /tasks/:id/comments`

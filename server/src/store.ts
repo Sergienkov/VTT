@@ -4,6 +4,7 @@ import type {
   Event,
   Idea,
   PhoneChallenge,
+  PublicTask,
   Session,
   SyncChange,
   Task,
@@ -88,6 +89,11 @@ export class MemoryStore {
       ideas: this.ideas.size,
       persistent: Boolean(this.persistencePath),
     };
+  }
+
+  findUserByPhone(phone: string) {
+    const userId = this.usersByPhone.get(phone);
+    return userId ? this.users.get(userId) ?? null : null;
   }
 
   startPhoneChallenge(phone: string) {
@@ -265,6 +271,105 @@ export class MemoryStore {
 
   setTaskStatus(userId: string, taskId: string, status: TaskStatus) {
     return this.updateTask(userId, taskId, { status });
+  }
+
+  shareTaskWithUser(
+    ownerId: string,
+    taskId: string,
+    input: { userId?: string; phone?: string; name?: string },
+  ) {
+    const task = this.getTaskForUser(taskId, ownerId);
+    if (!task || task.ownerId !== ownerId) return null;
+
+    const user =
+      input.userId
+        ? this.users.get(input.userId) ?? null
+        : input.phone
+          ? this.findUserByPhone(input.phone) ?? this.upsertUserByPhone(input.phone, input.name)
+          : null;
+    if (!user) return null;
+
+    const timestamp = nowIso();
+    const next = {
+      ...task,
+      assigneeId: task.assigneeId ?? user.id,
+      participants: this.mergeParticipants(task, ownerId, [user.id], timestamp),
+      updatedAt: timestamp,
+    };
+    this.tasks.set(taskId, next);
+    this.emitTaskEvent(next, ownerId, 'task_created');
+    this.persist();
+    return { task: next, user };
+  }
+
+  createTaskPublicShare(ownerId: string, taskId: string) {
+    const task = this.getTaskForUser(taskId, ownerId);
+    if (!task || task.ownerId !== ownerId) return null;
+    const timestamp = nowIso();
+    const next = {
+      ...task,
+      publicShareToken: task.publicShareToken ?? publicToken(),
+      updatedAt: timestamp,
+    };
+    this.tasks.set(taskId, next);
+    this.persist();
+    return next;
+  }
+
+  getPublicTask(tokenValue: string): PublicTask | null {
+    const task = this.taskByPublicToken(tokenValue);
+    if (!task || task.deletedAt) return null;
+    return toPublicTask(task);
+  }
+
+  acceptPublicTask(tokenValue: string) {
+    const task = this.taskByPublicToken(tokenValue);
+    if (!task || task.deletedAt) return null;
+    const timestamp = nowIso();
+    const next = {
+      ...task,
+      publicShareAcceptedAt: task.publicShareAcceptedAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    this.tasks.set(task.id, next);
+    this.emitTaskEvent(next, 'public_link', 'task_updated');
+    this.persist();
+    return toPublicTask(next);
+  }
+
+  completePublicTask(tokenValue: string) {
+    const task = this.taskByPublicToken(tokenValue);
+    if (!task || task.deletedAt) return null;
+    const timestamp = nowIso();
+    const next = {
+      ...task,
+      status: 'completed' as const,
+      publicShareAcceptedAt: task.publicShareAcceptedAt ?? timestamp,
+      publicShareCompletedAt: task.publicShareCompletedAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    this.tasks.set(task.id, next);
+    this.emitTaskEvent(next, 'public_link', 'task_updated');
+    this.persist();
+    return toPublicTask(next);
+  }
+
+  claimPublicTask(userId: string, tokenValue: string) {
+    const task = this.taskByPublicToken(tokenValue);
+    if (!task || task.deletedAt) return null;
+    const timestamp = nowIso();
+    const next = {
+      ...task,
+      assigneeId: task.assigneeId ?? userId,
+      publicShareAcceptedAt: task.publicShareAcceptedAt ?? timestamp,
+      publicShareClaimedUserId: userId,
+      participants: this.mergeParticipants(task, userId, [userId], timestamp),
+      updatedAt: timestamp,
+    };
+    this.tasks.set(task.id, next);
+    this.emitTaskEvent(next, userId, 'task_updated');
+    this.persist();
+    return next;
   }
 
   markTaskSeen(userId: string, taskId: string) {
@@ -699,6 +804,10 @@ export class MemoryStore {
     });
   }
 
+  private taskByPublicToken(tokenValue: string) {
+    return [...this.tasks.values()].find((task) => task.publicShareToken === tokenValue) ?? null;
+  }
+
   private emitTaskEvent(task: Task, actorId: string, type: Event['type']) {
     const timestamp = nowIso();
     for (const participant of task.participants) {
@@ -975,6 +1084,25 @@ function id(prefix: string) {
 
 function token(prefix: string) {
   return `${prefix}_${crypto.randomUUID()}_${crypto.randomUUID()}`;
+}
+
+function publicToken() {
+  return crypto.randomUUID().replaceAll('-', '');
+}
+
+function toPublicTask(task: Task): PublicTask {
+  return {
+    token: task.publicShareToken ?? '',
+    title: task.title,
+    description: task.description,
+    date: task.date,
+    time: task.time,
+    durationMinutes: task.durationMinutes,
+    status: task.status,
+    acceptedAt: task.publicShareAcceptedAt,
+    completedAt: task.publicShareCompletedAt,
+    updatedAt: task.updatedAt,
+  };
 }
 
 function randomOtp() {

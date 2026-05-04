@@ -50,7 +50,24 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
+  publicShareToken?: string;
+  publicShareAcceptedAt?: string;
+  publicShareCompletedAt?: string;
+  publicShareClaimedUserId?: string;
   participants: TaskParticipant[];
+};
+
+export type PublicTask = {
+  token: string;
+  title: string;
+  description?: string;
+  date: string;
+  time?: string;
+  durationMinutes?: number;
+  status: TaskStatus;
+  acceptedAt?: string;
+  completedAt?: string;
+  updatedAt: string;
 };
 
 export type Comment = {

@@ -30,7 +30,25 @@ export type Task = {
   important: boolean;
   seen: boolean;
   comments: string[];
+  publicShareToken?: string;
+  publicShareUrl?: string;
+  publicShareAcceptedAt?: string;
+  publicShareCompletedAt?: string;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type PublicSharedTask = {
+  token: string;
+  shareUrl: string;
+  title: string;
+  description?: string;
+  date: string;
+  time?: string;
+  durationMinutes?: number;
+  status: TaskStatus;
+  acceptedAt?: string;
+  completedAt?: string;
   updatedAt: string;
 };
 
