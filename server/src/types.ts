@@ -40,6 +40,7 @@ export type Task = {
   ownerId: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;
@@ -61,6 +62,7 @@ export type PublicTask = {
   token: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;

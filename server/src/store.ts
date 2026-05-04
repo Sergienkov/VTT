@@ -19,6 +19,7 @@ type CreateTaskInput = {
   id?: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;
@@ -214,6 +215,7 @@ export class MemoryStore {
       ownerId,
       title: input.title,
       description: input.description,
+      idealResult: input.idealResult,
       date: input.date,
       time: input.time,
       durationMinutes: input.durationMinutes,
@@ -242,6 +244,7 @@ export class MemoryStore {
       ...task,
       title: patch.title ?? task.title,
       description: patch.description ?? task.description,
+      idealResult: patch.idealResult ?? task.idealResult,
       date: patch.date ?? task.date,
       time: patch.time ?? task.time,
       durationMinutes: patch.durationMinutes ?? task.durationMinutes,
@@ -948,6 +951,7 @@ export class MemoryStore {
     ownerId: string;
     title: string;
     description?: string;
+    idealResult?: string;
     date: string;
     time?: string;
     durationMinutes?: number;
@@ -963,6 +967,7 @@ export class MemoryStore {
       ownerId: input.ownerId,
       title: input.title,
       description: input.description,
+      idealResult: input.idealResult,
       date: input.date,
       time: input.time,
       durationMinutes: input.durationMinutes,
@@ -988,6 +993,7 @@ export function taskInputFromRecord(record: Record<string, unknown>): CreateTask
     id: readString(record, 'id'),
     title: readRequiredString(record, 'title'),
     description: readString(record, 'description'),
+    idealResult: readString(record, 'idealResult'),
     date: readRequiredString(record, 'date'),
     time: readString(record, 'time'),
     durationMinutes: readNumber(record, 'durationMinutes'),
@@ -1003,6 +1009,7 @@ export function taskPatchFromRecord(record: Record<string, unknown>): UpdateTask
   return {
     title: readString(record, 'title'),
     description: readString(record, 'description'),
+    idealResult: readString(record, 'idealResult'),
     date: readString(record, 'date'),
     time: readString(record, 'time'),
     durationMinutes: readNumber(record, 'durationMinutes'),
@@ -1095,6 +1102,7 @@ function toPublicTask(task: Task): PublicTask {
     token: task.publicShareToken ?? '',
     title: task.title,
     description: task.description,
+    idealResult: task.idealResult,
     date: task.date,
     time: task.time,
     durationMinutes: task.durationMinutes,

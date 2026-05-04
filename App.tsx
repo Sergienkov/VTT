@@ -524,27 +524,24 @@ export default function App() {
   const saveTask = (draft: TaskDraft, taskId?: string) => {
     const now = new Date().toISOString();
     const isEdit = Boolean(taskId);
+    const existingTask = taskId ? tasks.find((task) => task.id === taskId) : undefined;
     const nextTask: Task = {
+      ...(existingTask ?? {}),
       id: taskId ?? `task-${Date.now()}`,
       title: draft.title.trim(),
       description: draft.description.trim(),
+      idealResult: draft.idealResult.trim(),
       date: draft.date.trim() || TODAY,
       time: draft.time.trim() || undefined,
       durationMinutes: parseOptionalInt(draft.durationMinutes),
       assignee: draft.assignee.trim() || undefined,
       linkedUser: draft.linkedUser.trim() || undefined,
-      status: taskId
-        ? tasks.find((task) => task.id === taskId)?.status ?? 'active'
-        : 'active',
+      status: existingTask?.status ?? 'active',
       focus: draft.focus,
       important: draft.important,
       seen: true,
-      comments: taskId
-        ? tasks.find((task) => task.id === taskId)?.comments ?? []
-        : [],
-      createdAt: taskId
-        ? tasks.find((task) => task.id === taskId)?.createdAt ?? now
-        : now,
+      comments: existingTask?.comments ?? [],
+      createdAt: existingTask?.createdAt ?? now,
       updatedAt: now,
     };
 
@@ -1612,6 +1609,12 @@ function PublicTaskScreen({
             {task.description ? (
               <Text style={styles.publicTaskDescription}>{task.description}</Text>
             ) : null}
+            {task.idealResult ? (
+              <View style={styles.publicTaskResult}>
+                <Text style={styles.publicTaskResultLabel}>Идеальный результат</Text>
+                <Text style={styles.publicTaskResultText}>{task.idealResult}</Text>
+              </View>
+            ) : null}
             <View style={styles.publicTaskMetaRow}>
               <CalendarDays size={18} color={colors.muted} strokeWidth={2} />
               <Text style={styles.publicTaskMetaText}>
@@ -2316,6 +2319,7 @@ function InlineSharedTaskForm({
     onSave({
       title: trimmed,
       description: '',
+      idealResult: '',
       date: date.trim() || TODAY,
       time: '',
       durationMinutes: '',
@@ -2518,7 +2522,9 @@ function DetailScreen({
             {task.description || 'Описание пока не добавлено.'}
           </Text>
           <Text style={styles.detailHint}>✓ Идеальный конечный результат:</Text>
-          <Text style={styles.detailResult}>Задача закрыта без лишних уточнений</Text>
+          <Text style={styles.detailResult}>
+            {task.idealResult || 'Задача закрыта без лишних уточнений'}
+          </Text>
           {task.linkedUser ? (
             <Text style={styles.shareLink}>Связано с: {task.linkedUser}</Text>
           ) : (
@@ -2626,6 +2632,16 @@ function TaskEditorModal({
                 value={draft.description}
                 onChangeText={(description) => update({ description })}
                 placeholder="Короткий контекст"
+                placeholderTextColor={colors.muted}
+                multiline
+                style={[styles.input, styles.textArea]}
+              />
+            </Field>
+            <Field label="Идеальный результат">
+              <TextInput
+                value={draft.idealResult}
+                onChangeText={(idealResult) => update({ idealResult })}
+                placeholder="Как поймем, что задача готова?"
                 placeholderTextColor={colors.muted}
                 multiline
                 style={[styles.input, styles.textArea]}
@@ -3083,7 +3099,9 @@ function TaskInlineDetails({ task, onEdit }: { task: Task; onEdit: () => void })
       <View style={styles.taskInlineMetaGrid}>
         <View style={styles.taskInlineMetaItem}>
           <Text style={styles.taskInlineMetaLabel}>Результат</Text>
-          <Text style={styles.taskInlineMetaValue}>Задача закрыта без лишних уточнений</Text>
+          <Text style={styles.taskInlineMetaValue}>
+            {task.idealResult || 'Задача закрыта без лишних уточнений'}
+          </Text>
         </View>
       </View>
       {task.comments.length > 0 ? (
@@ -3141,6 +3159,7 @@ function toDraft(task?: Task, initialTitle?: string, initialDraft?: Partial<Task
   const draft = {
     title: task?.title ?? initialTitle ?? '',
     description: task?.description ?? '',
+    idealResult: task?.idealResult ?? '',
     date: task?.date ?? TODAY,
     time: task?.time ?? '',
     durationMinutes: task?.durationMinutes ? String(task.durationMinutes) : '',
@@ -4359,6 +4378,25 @@ const styles = StyleSheet.create({
     color: '#3f3f3f',
     fontSize: 16,
     lineHeight: 23,
+  },
+  publicTaskResult: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#f7f4ea',
+  },
+  publicTaskResultLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  publicTaskResultText: {
+    marginTop: 5,
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '600',
   },
   publicTaskMetaRow: {
     marginTop: 16,

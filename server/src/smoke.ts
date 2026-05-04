@@ -45,6 +45,7 @@ const createdTask = await json(
     body: JSON.stringify({
       title: 'Shared link smoke task',
       description: 'Check public share flow',
+      idealResult: 'Author sees completion from a public link',
       date: '2026-05-04',
     }),
   }),
@@ -63,6 +64,10 @@ const shareToken = readString(share, 'token');
 
 const publicTask = await json(app.request(`/public/tasks/${encodeURIComponent(shareToken)}`));
 assert(readRecord(publicTask, 'item').title === 'Shared link smoke task', 'public task failed');
+assert(
+  readRecord(publicTask, 'item').idealResult === 'Author sees completion from a public link',
+  'public ideal result failed',
+);
 
 const acceptedTask = await json(
   app.request(`/public/tasks/${encodeURIComponent(shareToken)}/accept`, {

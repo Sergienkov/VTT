@@ -35,6 +35,7 @@ type Task = {
   ownerId: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;
@@ -183,6 +184,7 @@ Response:
   "id": "client_uuid_optional",
   "title": "Проверить подписи в корпоративной почте",
   "description": "Короткий контекст",
+  "idealResult": "Подписи проверены, найденные ошибки исправлены",
   "date": "2026-04-28",
   "time": "12:30",
   "durationMinutes": 30,
@@ -271,6 +273,7 @@ Public response:
     "shareUrl": "https://veratt.ru/task/unique_token",
     "title": "Проверить задачу",
     "description": "Короткий контекст",
+    "idealResult": "Задача закрыта без дополнительных уточнений",
     "date": "2026-05-04",
     "time": "18:00",
     "durationMinutes": 30,
@@ -439,6 +442,7 @@ tasks (
   owner_id uuid references users(id),
   title text not null,
   description text,
+  ideal_result text,
   task_date date not null,
   task_time time,
   duration_minutes int,

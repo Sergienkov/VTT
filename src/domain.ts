@@ -20,6 +20,7 @@ export type Task = {
   id: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;
@@ -43,6 +44,7 @@ export type PublicSharedTask = {
   shareUrl: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;
@@ -115,6 +117,7 @@ export type PendingMutation =
 export type TaskDraft = {
   title: string;
   description: string;
+  idealResult: string;
   date: string;
   time: string;
   durationMinutes: string;

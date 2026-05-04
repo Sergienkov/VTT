@@ -12,6 +12,7 @@ type ApiTask = {
   ownerId: string;
   title: string;
   description?: string;
+  idealResult?: string;
   date: string;
   time?: string;
   durationMinutes?: number;
@@ -321,6 +322,7 @@ function toAppTask(task: ApiTask, currentUserId: string, comments: string[]): Ta
     id: task.id,
     title: task.title,
     description: task.description ?? '',
+    idealResult: task.idealResult ?? '',
     date: task.date,
     time: task.time,
     durationMinutes: task.durationMinutes,
@@ -355,6 +357,7 @@ function toTaskPayload(task: Task) {
     id: task.id,
     title: task.title,
     description: task.description,
+    idealResult: task.idealResult,
     date: task.date,
     time: task.time,
     durationMinutes: task.durationMinutes,
